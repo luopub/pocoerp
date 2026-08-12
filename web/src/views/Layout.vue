@@ -7,6 +7,43 @@
           <el-icon><HomeFilled /></el-icon>
           <span>首页</span>
         </el-menu-item>
+        <el-sub-menu index="basic">
+          <template #title>
+            <el-icon><Files /></el-icon>
+            <span>基础档案</span>
+          </template>
+          <el-menu-item index="/basic/suppliers">供应商</el-menu-item>
+          <el-menu-item index="/basic/channels">渠道</el-menu-item>
+          <el-menu-item index="/basic/materials">原材料</el-menu-item>
+        </el-sub-menu>
+        <el-menu-item index="/products">
+          <el-icon><Goods /></el-icon>
+          <span>产品管理</span>
+        </el-menu-item>
+        <el-menu-item index="/mappings">
+          <el-icon><Connection /></el-icon>
+          <span>平台映射</span>
+        </el-menu-item>
+        <el-menu-item index="/purchases">
+          <el-icon><ShoppingCart /></el-icon>
+          <span>采购管理</span>
+        </el-menu-item>
+        <el-menu-item index="/workorders">
+          <el-icon><SetUp /></el-icon>
+          <span>委外加工</span>
+        </el-menu-item>
+        <el-menu-item index="/inventory">
+          <el-icon><Box /></el-icon>
+          <span>库存</span>
+        </el-menu-item>
+        <el-menu-item index="/outbound">
+          <el-icon><Sell /></el-icon>
+          <span>出库管理</span>
+        </el-menu-item>
+        <el-menu-item index="/import">
+          <el-icon><Upload /></el-icon>
+          <span>数据导入</span>
+        </el-menu-item>
         <!-- 后续模块菜单将按开发计划逐步加入 -->
       </el-menu>
     </el-aside>
@@ -36,7 +73,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { HomeFilled, ArrowDown } from '@element-plus/icons-vue'
+import { HomeFilled, ArrowDown, Files, Goods, Connection, ShoppingCart, Box, Sell, SetUp, Upload } from '@element-plus/icons-vue'
 import { auth, ROLE_NAMES } from '../store.js'
 
 const router = useRouter()

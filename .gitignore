@@ -22,3 +22,6 @@ Thumbs.db
 # 临时目录
 .tmp-mongo-check/
 tmp/
+
+# Claude Code local settings
+.claude/settings.local.json

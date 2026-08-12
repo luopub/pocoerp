@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { connectDB, disconnectDB } from './db.js'
 import { User } from './models/user.js'
+import { Channel, DEFAULT_CHANNEL } from './models/channel.js'
 
 // 种子数据：初始管理员账号（首次部署后请立即登录修改密码）
 const ADMIN_USERNAME = process.env.SEED_ADMIN_USERNAME || 'admin'
@@ -18,6 +19,11 @@ async function main() {
       role: 'admin',
     })
     console.log(`[seed] 已创建管理员 ${ADMIN_USERNAME}（初始密码 ${ADMIN_PASSWORD}，请尽快修改）`)
+  }
+  // 预置内置渠道"非平台产品"（需求文档 4.12）
+  if (!(await Channel.findOne({ name: DEFAULT_CHANNEL }))) {
+    await Channel.create({ name: DEFAULT_CHANNEL, builtin: true })
+    console.log(`[seed] 已创建内置渠道「${DEFAULT_CHANNEL}」`)
   }
   await disconnectDB()
 }

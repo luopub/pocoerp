@@ -1,4 +1,7 @@
 import 'dotenv/config'
+import path from 'node:path'
+import fs from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const required = ['MONGODB_HOST', 'MONGODB_PORT', 'MONGODB_USERNAME', 'MONGODB_PASSWORD', 'MONGODB_DBNAME']
 for (const key of required) {
@@ -20,3 +23,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
   jwtExpires: process.env.JWT_EXPIRES || '12h',
 }
+
+// uploads 目录在项目根（pocoerp/uploads）：config.js 位于 server/src/，上两级即项目根
+export const uploadDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads')
+fs.mkdirSync(uploadDir, { recursive: true })
