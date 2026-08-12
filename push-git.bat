@@ -4,11 +4,12 @@ setlocal
 rem ===== PocoERP: commit and push to GitHub + Gitee =====
 
 rem 1. Commit message: command line args > user input > default "updated"
+rem NOTE: assigning an empty value UNDEFINES the variable in cmd,
+rem so use "if defined" checks instead of comparing to "".
 set "msg=%*"
-rem Strip surrounding quotes from args to keep if-checks safe
-set "msg=%msg:"=%"
-if "%msg%"=="" set /p "msg=Enter commit message (press Enter for 'updated'): "
-if "%msg%"=="" set "msg=updated"
+if defined msg set "msg=%msg:"=%"
+if not defined msg set /p "msg=Enter commit message (press Enter for 'updated'): "
+if not defined msg set "msg=updated"
 echo.
 echo [push-git] Commit message: %msg%
 echo.
