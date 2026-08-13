@@ -34,7 +34,9 @@
       "Bash(curl -s -o /dev/null -w 'front:%{http_code} ' http://192.168.1.14:8080/)",
       "Bash(curl -s http://192.168.1.14:8080/api/health)",
       "Bash(curl -s -X POST http://192.168.1.14:8080/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}' -o /dev/null -w 'login:%{http_code}\\\\n')",
-      "Read(//d/work/test/**)"
+      "Read(//d/work/test/**)",
+      "Bash(curl -s -X POST http://192.168.1.14:8080/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',async\\(\\)=>{const t=JSON.parse\\(d\\).token;const r=await fetch\\('http://192.168.1.14:8080/api/alerts/dashboard',{headers:{Authorization:'Bearer '+t}}\\);const j=await r.json\\(\\);console.log\\('生产看板:',JSON.stringify\\({alerts:j.alerts.length,overdue:j.overdue.length,wko:j.wko,month:j.month}\\)\\)}\\)\")"
     ],
     "defaultMode": "bypassPermissions"
   }
