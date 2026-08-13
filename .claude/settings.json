@@ -17,7 +17,12 @@
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\(j.list.map\\(s=>s.supplier+' owe='+s.owe\\).join\\('\\\\n'\\)\\)}\\)\")",
       "Bash(python -)",
       "Bash(node --test \"tests/*.test.js\")",
-      "Bash(./push-git.sh \"feat: phase 2+3 - stocktake/returns/diff-close/payments/alerts/replenishment/dashboard/reports/excel-export/settings/users pages+apis\")"
+      "Bash(./push-git.sh \"feat: phase 2+3 - stocktake/returns/diff-close/payments/alerts/replenishment/dashboard/reports/excel-export/settings/users pages+apis\")",
+      "Bash(env)",
+      "Bash(node scripts/ssh-run.js \"hostname && whoami && node -v && pm2 -v 2>/dev/null || echo NOPM2\")",
+      "Bash(node scripts/ssh-run.js \"hostname && whoami && node -v && \\(pm2 -v || echo NOPM2\\) && \\(nginx -v 2>&1 || echo NONGINX\\) && \\(mongodump --version | head -1 || echo NODUMP\\) && ls /opt /var/www 2>/dev/null\")",
+      "Bash(node scripts/ssh-run.js \"sudo -n true && echo SUDO_OK || echo SUDO_NEED_PW\" \"curl -sI https://registry.npmjs.org -o /dev/null -w '%{http_code}' --max-time 8 || echo NONET\")",
+      "Bash(./push-git.sh \"feat: phase 4 - deployment: pm2 ecosystem, nginx conf, backup/deploy/setup scripts, deploy doc, scp-put tool\")"
     ],
     "defaultMode": "bypassPermissions"
   }
