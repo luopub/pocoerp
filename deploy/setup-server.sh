@@ -70,7 +70,11 @@ if [ -n "$SUDO_PASS" ]; then
   echo "$SUDO_PASS" | sudo -S rm -f /etc/nginx/sites-enabled/default
   echo "$SUDO_PASS" | sudo -S nginx -t
   echo "$SUDO_PASS" | sudo -S systemctl enable --now nginx
-  echo "$SUDO_PASS" | sudo -S systemctl reload nginx
+  echo "$SUDO_PASS" | sudo -S systemctl restart nginx
+  # nginx(www-data) 需要穿过 home 目录读取 web/dist
+  chmod o+x "$HOME"
+  # 防火墙放行 8080
+  echo "$SUDO_PASS" | sudo -S ufw allow 8080/tcp || true
 else
   echo "未提供 SUDO_PASS，跳过 nginx 安装（请手动执行 deploy/nginx-pocoerp.conf 的配置）"
 fi

@@ -28,7 +28,13 @@
       "Bash(node scripts/scp-put.js \"D:\\\\\\\\work\\\\\\\\test\\\\\\\\pocoerp\\\\\\\\deploy\\\\\\\\setup-server.sh\" /home/dell/setup-server.sh)",
       "Bash(node scripts/ssh-run.js \"head -1 ~/setup-server.sh | od -c | head -1\" \"git --version\" \"curl -sI https://gitee.com -o /dev/null -w 'gitee:%{http_code}\\\\n' --max-time 8\")",
       "Bash(node scripts/ssh-run.js \"ss -tln | awk '{print \\\\$4}' | grep -oE '[0-9]+\\\\$' | sort -n | uniq | tr '\\\\n' ' ' && echo && \\(ss -tln | grep -E ':3100|:8080' || echo '3100/8080 free'\\)\")",
-      "Bash(./push-git.sh \"fix: dotenv path independent of cwd \\(pm2\\), deploy ports 3100/8080 \\(80/3000 occupied by docker\\)\")"
+      "Bash(./push-git.sh \"fix: dotenv path independent of cwd \\(pm2\\), deploy ports 3100/8080 \\(80/3000 occupied by docker\\)\")",
+      "Bash(node scripts/ssh-run.js 'chmod +x ~/pocoerp/deploy/backup.sh ~/pocoerp/deploy/deploy.sh && mkdir -p ~/backups && \\( crontab -l 2>/dev/null | grep -v '\\\\''pocoerp/deploy/backup.sh'\\\\'' ; echo '\\\\''30 3 * * * /home/dell/pocoerp/deploy/backup.sh >> /home/dell/backups/pocoerp.log 2>&1'\\\\'' \\) | crontab - && crontab -l | grep backup' 'cd ~/pocoerp && ./deploy/backup.sh' 'curl -s http://127.0.0.1:8080/api/health && echo && curl -s -o /dev/null -w '\\\\''front:%{http_code}\\\\n'\\\\'' http://127.0.0.1:8080/ && curl -s -X POST http://127.0.0.1:8080/api/auth/login -H '\\\\''Content-Type: application/json'\\\\'' -d '\\\\''{\"username\":\"admin\",\"password\":\"admin123\"}'\\\\'' | head -c 80 && echo')",
+      "Bash(node scripts/ssh-run.js \"chmod o+x /home/dell && curl -s -o /dev/null -w 'front:%{http_code}\\\\n' http://127.0.0.1:8080/ && curl -s http://127.0.0.1:8080/ | head -c 120 && echo\")",
+      "Bash(curl -s -o /dev/null -w 'front:%{http_code} ' http://192.168.1.14:8080/)",
+      "Bash(curl -s http://192.168.1.14:8080/api/health)",
+      "Bash(curl -s -X POST http://192.168.1.14:8080/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}' -o /dev/null -w 'login:%{http_code}\\\\n')",
+      "Read(//d/work/test/**)"
     ],
     "defaultMode": "bypassPermissions"
   }
