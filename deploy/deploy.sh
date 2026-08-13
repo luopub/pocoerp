@@ -20,4 +20,4 @@ pm2 reload ecosystem.config.js || pm2 start ecosystem.config.js
 pm2 save
 
 echo "== done =="
-curl -s http://127.0.0.1:3000/api/health && echo
+curl -s http://127.0.0.1:3100/api/health && echo

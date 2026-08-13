@@ -1,7 +1,11 @@
-import 'dotenv/config'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import dotenv from 'dotenv'
+
+// 显式定位 server/.env（config.js 在 server/src/ 下），不依赖进程 cwd —— PM2 从项目根启动也能读到
+const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+dotenv.config({ path: path.join(serverDir, '.env') })
 
 const required = ['MONGODB_HOST', 'MONGODB_PORT', 'MONGODB_USERNAME', 'MONGODB_PASSWORD', 'MONGODB_DBNAME']
 for (const key of required) {
@@ -25,5 +29,5 @@ export const config = {
 }
 
 // uploads 目录在项目根（pocoerp/uploads）：config.js 位于 server/src/，上两级即项目根
-export const uploadDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads')
+export const uploadDir = path.resolve(serverDir, '../uploads')
 fs.mkdirSync(uploadDir, { recursive: true })

@@ -37,7 +37,7 @@ MONGODB_DBNAME=crawler
 MONGODB_USERNAME=${MONGODB_USERNAME:?请通过环境变量传入 Mongo 用户名}
 MONGODB_PASSWORD=${MONGODB_PASSWORD:?请通过环境变量传入 Mongo 密码}
 APP_DB_NAME=pocoerp
-PORT=3000
+PORT=3100
 JWT_SECRET=$JWT
 EOF
   chmod 600 server/.env

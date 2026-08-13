@@ -22,7 +22,13 @@
       "Bash(node scripts/ssh-run.js \"hostname && whoami && node -v && pm2 -v 2>/dev/null || echo NOPM2\")",
       "Bash(node scripts/ssh-run.js \"hostname && whoami && node -v && \\(pm2 -v || echo NOPM2\\) && \\(nginx -v 2>&1 || echo NONGINX\\) && \\(mongodump --version | head -1 || echo NODUMP\\) && ls /opt /var/www 2>/dev/null\")",
       "Bash(node scripts/ssh-run.js \"sudo -n true && echo SUDO_OK || echo SUDO_NEED_PW\" \"curl -sI https://registry.npmjs.org -o /dev/null -w '%{http_code}' --max-time 8 || echo NONET\")",
-      "Bash(./push-git.sh \"feat: phase 4 - deployment: pm2 ecosystem, nginx conf, backup/deploy/setup scripts, deploy doc, scp-put tool\")"
+      "Bash(./push-git.sh \"feat: phase 4 - deployment: pm2 ecosystem, nginx conf, backup/deploy/setup scripts, deploy doc, scp-put tool\")",
+      "Bash(node scripts/scp-put.js deploy/setup-server.sh /home/dell/setup-server.sh)",
+      "Bash(node scripts/ssh-run.js \"git --version && curl -sI https://gitee.com -o /dev/null -w 'gitee:%{http_code}\\\\n' --max-time 8\")",
+      "Bash(node scripts/scp-put.js \"D:\\\\\\\\work\\\\\\\\test\\\\\\\\pocoerp\\\\\\\\deploy\\\\\\\\setup-server.sh\" /home/dell/setup-server.sh)",
+      "Bash(node scripts/ssh-run.js \"head -1 ~/setup-server.sh | od -c | head -1\" \"git --version\" \"curl -sI https://gitee.com -o /dev/null -w 'gitee:%{http_code}\\\\n' --max-time 8\")",
+      "Bash(node scripts/ssh-run.js \"ss -tln | awk '{print \\\\$4}' | grep -oE '[0-9]+\\\\$' | sort -n | uniq | tr '\\\\n' ' ' && echo && \\(ss -tln | grep -E ':3100|:8080' || echo '3100/8080 free'\\)\")",
+      "Bash(./push-git.sh \"fix: dotenv path independent of cwd \\(pm2\\), deploy ports 3100/8080 \\(80/3000 occupied by docker\\)\")"
     ],
     "defaultMode": "bypassPermissions"
   }
