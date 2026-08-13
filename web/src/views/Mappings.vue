@@ -6,6 +6,7 @@
         <el-option v-for="c in channels" :key="c._id" :label="c.name" :value="c.name" />
       </el-select>
       <el-button type="primary" @click="openEdit()">新增映射</el-button>
+      <el-button @click="downloadExcel('mappings')">导出 Excel</el-button>
     </div>
     <el-table :data="list" v-loading="loading" border>
       <el-table-column label="图片" width="70">
@@ -79,6 +80,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api.js'
+import { downloadExcel } from '../download.js'
 import ImageUpload from '../components/ImageUpload.vue'
 
 const list = ref([])

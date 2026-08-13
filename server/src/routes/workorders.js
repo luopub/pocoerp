@@ -254,4 +254,31 @@ router.post('/:id/void', canWrite, wrap(async (req, res) => {
   res.json({ doc })
 }))
 
+// POST /api/workorders/:id/payments  登记加工费付款 { date, amount }（情景 17）
+router.post('/:id/payments', canWrite, wrap(async (req, res) => {
+  const { date, amount } = req.body || {}
+  if (!amount || amount <= 0) return bad(res, '付款金额必须大于 0')
+  const doc = await WorkOrder.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '加工单不存在' })
+  if (doc.status === 'void') return bad(res, '单据已作废')
+  const paid = doc.payments.reduce((s, p) => s + p.amount, 0)
+  if (paid + amount > doc.payable + 0.0001) {
+    return bad(res, `付款超出应付（应付 ${doc.payable.toFixed(2)}，已付 ${paid.toFixed(2)}）`)
+  }
+  doc.payments.push({ date: date ? new Date(date) : new Date(), amount })
+  await doc.save()
+  res.json({ doc })
+}))
+
+// DELETE /api/workorders/:id/payments/:idx
+router.delete('/:id/payments/:idx', canWrite, wrap(async (req, res) => {
+  const doc = await WorkOrder.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '加工单不存在' })
+  const idx = parseInt(req.params.idx, 10)
+  if (idx < 0 || idx >= doc.payments.length) return bad(res, '付款记录不存在')
+  doc.payments.splice(idx, 1)
+  await doc.save()
+  res.json({ doc })
+}))
+
 export default router

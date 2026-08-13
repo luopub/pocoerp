@@ -56,6 +56,7 @@
           <el-option v-for="t in logTypes" :key="t" :label="t" :value="t" />
         </el-select>
         <el-date-picker v-model="logRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" @change="loadLogs" />
+        <el-button @click="exportLogs">导出 Excel</el-button>
       </div>
       <el-table :data="logs" v-loading="loading" border>
         <el-table-column label="时间" width="160">
@@ -93,6 +94,7 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
 import api from '../api.js'
+import { downloadExcel } from '../download.js'
 
 const tab = ref('product')
 const list = ref([])
@@ -134,6 +136,12 @@ async function loadLogs() {
   } finally {
     loading.value = false
   }
+}
+
+function exportLogs() {
+  const params = { sku: logSku.value, type: logType.value }
+  if (logRange.value?.length === 2) { params.from = logRange.value[0]; params.to = logRange.value[1] }
+  downloadExcel('logs', params)
 }
 
 watch(tab, (t) => { t === 'logs' ? loadLogs() : load() })

@@ -6,6 +6,7 @@
       </el-select>
       <el-input v-model="keyword" placeholder="搜索单号/产品编号" clearable class="search" @change="load" />
       <el-button type="primary" @click="openCreate">新建加工单</el-button>
+      <el-button @click="downloadExcel('workorders')">导出 Excel</el-button>
     </div>
 
     <el-table :data="list" v-loading="loading" border>
@@ -72,6 +73,7 @@
           <el-tag :type="STATUS_TYPE[detail.status]">{{ WKO_STATUS[detail.status] }}</el-tag>
           <span>{{ detail.spuName }}（{{ detail.spuNo }}）</span>
           <span class="muted">耗材成本 {{ detail.consumableCost }}/件</span>
+          <el-button v-if="detail.status !== 'void'" size="small" type="primary" plain @click="openPayments">付款登记</el-button>
           <el-popconfirm v-if="canVoid" title="确定作废该加工单？" @confirm="voidOrder">
             <template #reference><el-button size="small" type="danger" plain>作废</el-button></template>
           </el-popconfirm>
@@ -150,6 +152,35 @@
         <el-button type="primary" :loading="saving" @click="saveIssue">确认发料</el-button>
       </template>
     </el-dialog>
+
+    <!-- 付款登记对话框 -->
+    <el-dialog v-model="payDlg" :title="`加工费付款 — ${detail?.no || ''}`" width="520px">
+      <div class="pay-summary">
+        应付 <b>{{ detail?.payable.toFixed(2) }}</b>，
+        已付 <b :style="{ color: '#67c23a' }">{{ paidOf(detail).toFixed(2) }}</b>，
+        未付 <b :style="{ color: '#f56c6c' }">{{ (detail ? detail.payable - paidOf(detail) : 0).toFixed(2) }}</b>
+      </div>
+      <el-table :data="detail?.payments || []" size="small" border>
+        <el-table-column label="日期" width="160">
+          <template #default="{ row }">{{ fmtDate(row.date) }}</template>
+        </el-table-column>
+        <el-table-column label="金额" align="right">
+          <template #default="{ row }">{{ row.amount.toFixed(2) }}</template>
+        </el-table-column>
+        <el-table-column label="" width="70">
+          <template #default="{ $index }">
+            <el-popconfirm title="删除该笔付款？" @confirm="removePayment($index)">
+              <template #reference><el-button link type="danger">删除</el-button></template>
+            </el-popconfirm>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="pay-add">
+        <el-date-picker v-model="payForm.date" type="date" value-format="YYYY-MM-DD" placeholder="付款日期" />
+        <el-input-number v-model="payForm.amount" :min="0.01" :precision="2" controls-position="right" placeholder="金额" />
+        <el-button type="primary" :loading="saving" @click="addPayment">登记</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -157,6 +188,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api.js'
+import { downloadExcel } from '../download.js'
 
 const WKO_STATUS = { pending: '待开始', processing: '加工中', done: '已完成', void: '已作废' }
 const STATUS_TYPE = { pending: 'info', processing: 'primary', done: 'success', void: 'info' }
@@ -311,6 +343,37 @@ async function complete() {
   }
 }
 
+// ---- 加工费付款登记 ----
+const payDlg = ref(false)
+const payForm = reactive({ date: '', amount: null })
+const paidOf = (d) => (d?.payments || []).reduce((s, p) => s + p.amount, 0)
+
+function openPayments() {
+  payForm.date = new Date().toISOString().slice(0, 10)
+  payForm.amount = Math.max(0, Math.round((detail.value.payable - paidOf(detail.value)) * 100) / 100) || null
+  payDlg.value = true
+}
+
+async function addPayment() {
+  if (!payForm.amount || payForm.amount <= 0) return ElMessage.warning('请输入付款金额')
+  saving.value = true
+  try {
+    await api.post(`/workorders/${detail.value._id}/payments`, payForm)
+    ElMessage.success('已登记')
+    payDlg.value = false
+    refresh()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removePayment(idx) {
+  await api.delete(`/workorders/${detail.value._id}/payments/${idx}`)
+  ElMessage.success('已删除')
+  payDlg.value = false
+  refresh()
+}
+
 async function voidOrder() {
   await api.post(`/workorders/${detail.value._id}/void`)
   ElMessage.success('已作废')
@@ -340,4 +403,6 @@ onMounted(() => { load(); loadRefs() })
 .qty-input { width: 90px; }
 .issue-list { border-top: 1px dashed #e4e7ed; padding-top: 6px; }
 .issue-tip { margin-bottom: 12px; }
+.pay-summary { margin-bottom: 10px; }
+.pay-add { display: flex; gap: 8px; margin-top: 10px; }
 </style>

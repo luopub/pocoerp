@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "WebFetch",
+      "WebSearch",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(npm run *)",
+      "Bash(node tmp/api-test/p2p3-test.mjs)",
+      "Bash(node -e ' *)",
+      "Bash(sed -i 's/r\\\\.status === 200/r.status < 300/g; s/r\\\\.status !== 200 \\\\&\\\\& r\\\\.status !== 201/r.status >= 300/g' tmp/api-test/p2p3-test.mjs)",
+      "Bash(curl -s -H 'Authorization: Bearer __TRACKED_VAR__' http://localhost:3000/api/alerts/dashboard)",
+      "Bash(curl -s -H 'Authorization: Bearer __TRACKED_VAR__' http://localhost:3000/api/alerts)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\(j.list.map\\(s=>s.supplier+' owe='+s.owe\\).join\\('\\\\n'\\)\\)}\\)\")",
+      "Bash(python -)",
+      "Bash(node --test \"tests/*.test.js\")",
+      "Bash(./push-git.sh \"feat: phase 2+3 - stocktake/returns/diff-close/payments/alerts/replenishment/dashboard/reports/excel-export/settings/users pages+apis\")"
+    ],
+    "defaultMode": "bypassPermissions"
+  }
+}

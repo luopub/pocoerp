@@ -8,6 +8,7 @@
       </el-radio-group>
       <el-input v-model="keyword" placeholder="搜索单号/渠道/SKU/平台ID" clearable class="search" @change="load" />
       <el-button type="primary" @click="openCreate">新建出库单</el-button>
+      <el-button @click="downloadExcel('outbounds')">导出 Excel</el-button>
     </div>
 
     <el-table :data="list" v-loading="loading" border>
@@ -137,6 +138,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api.js'
+import { downloadExcel } from '../download.js'
 
 const list = ref([])
 const loading = ref(false)

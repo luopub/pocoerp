@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { PurchaseOrder } from '../models/purchaseOrder.js'
 import { Product } from '../models/product.js'
 import { Material } from '../models/material.js'
+import { Supplier } from '../models/supplier.js'
 import { nextNo, subNo } from '../services/numbering.js'
 import { withTxn, applyInventoryChange, LOG_TYPES } from '../services/inventory.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
@@ -56,6 +57,9 @@ router.post('/', canWrite, wrap(async (req, res) => {
   const { type, supplier, date, remark = '', items = [] } = req.body || {}
   if (!['product', 'material'].includes(type)) return res.status(400).json({ message: '采购单类型无效' })
   if (!supplier?.trim()) return res.status(400).json({ message: '供应商必填' })
+  if (!(await Supplier.exists({ name: supplier.trim() }))) {
+    return res.status(400).json({ message: `供应商「${supplier.trim()}」不存在` })
+  }
   if (!items.length) return res.status(400).json({ message: '至少一行明细' })
 
   for (const it of items) {
@@ -138,6 +142,48 @@ router.post('/:id/void', canWrite, wrap(async (req, res) => {
     return res.status(400).json({ message: '已有入库记录，不能作废（可走差异结案）' })
   }
   doc.status = 'void'
+  await doc.save()
+  res.json({ doc })
+}))
+
+// POST /api/purchases/:id/close-diff  差异结案（情景 13）：未交数量结案，单据转已入库
+router.post('/:id/close-diff', canWrite, wrap(async (req, res) => {
+  const { diffNote = '' } = req.body || {}
+  const doc = await PurchaseOrder.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '采购单不存在' })
+  if (doc.status !== 'partial') {
+    return res.status(400).json({ message: '只有部分入库的单据可差异结案（未入库请直接作废）' })
+  }
+  if (!diffNote.trim()) return res.status(400).json({ message: '请填写差异原因' })
+  doc.diffNote = diffNote.trim()
+  doc.status = 'done'
+  await doc.save()
+  res.json({ doc })
+}))
+
+// POST /api/purchases/:id/payments  登记付款 { date, amount }（情景 17）
+router.post('/:id/payments', canWrite, wrap(async (req, res) => {
+  const { date, amount } = req.body || {}
+  if (!amount || amount <= 0) return res.status(400).json({ message: '付款金额必须大于 0' })
+  const doc = await PurchaseOrder.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '采购单不存在' })
+  if (doc.status === 'void') return res.status(400).json({ message: '单据已作废' })
+  const paid = doc.payments.reduce((s, p) => s + p.amount, 0)
+  if (paid + amount > doc.payable + 0.0001) {
+    return res.status(400).json({ message: `付款超出应付（应付 ${doc.payable.toFixed(2)}，已付 ${paid.toFixed(2)}）` })
+  }
+  doc.payments.push({ date: date ? new Date(date) : new Date(), amount })
+  await doc.save()
+  res.json({ doc })
+}))
+
+// DELETE /api/purchases/:id/payments/:idx  删除一笔付款（登记错误时）
+router.delete('/:id/payments/:idx', canWrite, wrap(async (req, res) => {
+  const doc = await PurchaseOrder.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '采购单不存在' })
+  const idx = parseInt(req.params.idx, 10)
+  if (idx < 0 || idx >= doc.payments.length) return res.status(400).json({ message: '付款记录不存在' })
+  doc.payments.splice(idx, 1)
   await doc.save()
   res.json({ doc })
 }))

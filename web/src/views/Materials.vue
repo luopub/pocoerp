@@ -3,6 +3,7 @@
     <div class="toolbar">
       <el-input v-model="keyword" placeholder="搜索名称/编号" clearable class="search" @change="load" />
       <el-button type="primary" @click="openSpuEdit()">新增原材料</el-button>
+      <el-button @click="downloadExcel('materials')">导出 Excel</el-button>
     </div>
     <el-table :data="list" v-loading="loading" border row-key="no">
       <el-table-column type="expand">
@@ -88,6 +89,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api.js'
+import { downloadExcel } from '../download.js'
 import AttrsEditor from '../components/AttrsEditor.vue'
 
 const list = ref([])

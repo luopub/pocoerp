@@ -14,6 +14,12 @@ import inventoryRoutes from './routes/inventory.js'
 import outboundRoutes from './routes/outbound.js'
 import workOrderRoutes from './routes/workorders.js'
 import importRoutes from './routes/importData.js'
+import stocktakeRoutes from './routes/stocktakes.js'
+import returnRoutes from './routes/returns.js'
+import alertRoutes from './routes/alerts.js'
+import settingsRoutes from './routes/settings.js'
+import reportRoutes from './routes/reports.js'
+import exportRoutes from './routes/exportData.js'
 
 const app = express()
 app.use(cors())
@@ -32,6 +38,12 @@ app.use('/api/inventory', inventoryRoutes)
 app.use('/api/outbounds', outboundRoutes)
 app.use('/api/workorders', workOrderRoutes)
 app.use('/api/import', importRoutes)
+app.use('/api/stocktakes', stocktakeRoutes)
+app.use('/api/returns', returnRoutes)
+app.use('/api/alerts', alertRoutes)
+app.use('/api', settingsRoutes)
+app.use('/api/reports', reportRoutes)
+app.use('/api/export', exportRoutes)
 
 // 上传图片静态服务
 app.use('/uploads', express.static(uploadDir))
@@ -44,6 +56,9 @@ app.use((err, req, res, next) => {
 })
 
 await connectDB()
+// 启动时校正单号计数器，防止与既有数据冲突
+const { syncCounters } = await import('./services/numbering.js')
+await syncCounters()
 app.listen(config.port, () => {
   console.log(`[server] PocoERP API listening on http://localhost:${config.port}`)
 })

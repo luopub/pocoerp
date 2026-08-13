@@ -32,19 +32,38 @@
           <el-icon><SetUp /></el-icon>
           <span>委外加工</span>
         </el-menu-item>
-        <el-menu-item index="/inventory">
-          <el-icon><Box /></el-icon>
-          <span>库存</span>
+        <el-sub-menu index="stock">
+          <template #title>
+            <el-icon><Box /></el-icon>
+            <span>库存管理</span>
+          </template>
+          <el-menu-item index="/inventory">库存查询</el-menu-item>
+          <el-menu-item index="/stocktakes">库存盘点</el-menu-item>
+        </el-sub-menu>
+        <el-sub-menu index="out">
+          <template #title>
+            <el-icon><Sell /></el-icon>
+            <span>出入库</span>
+          </template>
+          <el-menu-item index="/outbound">出库管理</el-menu-item>
+          <el-menu-item index="/returns">退货入库</el-menu-item>
+        </el-sub-menu>
+        <el-menu-item index="/replenishment">
+          <el-icon><Bell /></el-icon>
+          <span>补货建议</span>
         </el-menu-item>
-        <el-menu-item index="/outbound">
-          <el-icon><Sell /></el-icon>
-          <span>出库管理</span>
+        <el-menu-item index="/reports">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>报表</span>
         </el-menu-item>
         <el-menu-item index="/import">
           <el-icon><Upload /></el-icon>
           <span>数据导入</span>
         </el-menu-item>
-        <!-- 后续模块菜单将按开发计划逐步加入 -->
+        <el-menu-item index="/settings">
+          <el-icon><Setting /></el-icon>
+          <span>系统设置</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -73,7 +92,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { HomeFilled, ArrowDown, Files, Goods, Connection, ShoppingCart, Box, Sell, SetUp, Upload } from '@element-plus/icons-vue'
+import { HomeFilled, ArrowDown, Files, Goods, Connection, ShoppingCart, Box, Sell, SetUp, Upload, Bell, DataAnalysis, Setting } from '@element-plus/icons-vue'
 import { auth, ROLE_NAMES } from '../store.js'
 
 const router = useRouter()

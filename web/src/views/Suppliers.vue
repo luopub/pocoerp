@@ -6,6 +6,7 @@
         <el-option v-for="t in SUPPLIER_TYPES" :key="t" :label="t" :value="t" />
       </el-select>
       <el-button type="primary" @click="openEdit()">新增供应商</el-button>
+      <el-button @click="downloadExcel('suppliers')">导出 Excel</el-button>
     </div>
     <el-table :data="list" v-loading="loading" border>
       <el-table-column prop="no" label="编号" width="110" />
@@ -59,6 +60,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api.js'
+import { downloadExcel } from '../download.js'
 
 const SUPPLIER_TYPES = ['成品供应商', '原材料供应商', '加工商']
 const list = ref([])

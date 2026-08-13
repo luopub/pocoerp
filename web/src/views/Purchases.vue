@@ -11,6 +11,7 @@
       </el-select>
       <el-input v-model="keyword" placeholder="搜索单号/供应商/SKU" clearable class="search" @change="load" />
       <el-button type="primary" @click="openCreate">新建采购单</el-button>
+      <el-button @click="downloadExcel('purchases')">导出 Excel</el-button>
     </div>
 
     <el-table :data="list" v-loading="loading" border>
@@ -37,14 +38,23 @@
       <el-table-column prop="payable" label="应付金额" width="100" align="right">
         <template #default="{ row }">{{ row.payable.toFixed(2) }}</template>
       </el-table-column>
+      <el-table-column label="已付" width="100" align="right">
+        <template #default="{ row }">
+          <span :style="{ color: paidOf(row) < row.payable - 0.005 ? '#f56c6c' : '#67c23a' }">
+            {{ paidOf(row).toFixed(2) }}
+          </span>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <el-tag size="small" :type="STATUS_TYPE[row.status]">{{ PO_STATUS[row.status] }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="130" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
           <el-button v-if="row.status === 'pending' || row.status === 'partial'" link type="primary" @click="openReceive(row)">入库</el-button>
+          <el-button v-if="row.status === 'partial'" link type="warning" @click="openCloseDiff(row)">差异结案</el-button>
+          <el-button v-if="row.status !== 'void'" link type="primary" @click="openPayments(row)">付款</el-button>
           <el-popconfirm v-if="row.status === 'pending'" title="确定作废该采购单？" @confirm="voidOrder(row)">
             <template #reference><el-button link type="danger">作废</el-button></template>
           </el-popconfirm>
@@ -138,6 +148,46 @@
         <el-button type="primary" :loading="saving" @click="saveReceive">确认入库</el-button>
       </template>
     </el-dialog>
+
+    <!-- 差异结案 -->
+    <el-dialog v-model="diffDlg" :title="`差异结案 — ${diffOrder?.no || ''}`" width="480px">
+      <el-alert type="warning" :closable="false" class="recv-tip"
+        title="结案后未入库的剩余数量不再入库，单据转为「已入库」状态。请填写差异原因。" />
+      <el-input v-model="diffNote" type="textarea" :rows="3" placeholder="差异原因，如：供应商少发 10 件，已协商不再补发" />
+      <template #footer>
+        <el-button @click="diffDlg = false">取消</el-button>
+        <el-button type="warning" :loading="saving" @click="saveCloseDiff">确认结案</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 付款登记 -->
+    <el-dialog v-model="payDlg" :title="`付款登记 — ${payOrder?.no || ''}`" width="520px">
+      <div class="pay-summary">
+        应付 <b>{{ payOrder?.payable.toFixed(2) }}</b>，
+        已付 <b :style="{ color: '#67c23a' }">{{ paidOf(payOrder).toFixed(2) }}</b>，
+        未付 <b :style="{ color: '#f56c6c' }">{{ (payOrder ? payOrder.payable - paidOf(payOrder) : 0).toFixed(2) }}</b>
+      </div>
+      <el-table :data="payOrder?.payments || []" size="small" border>
+        <el-table-column label="日期" width="160">
+          <template #default="{ row }">{{ fmtDate(row.date) }}</template>
+        </el-table-column>
+        <el-table-column label="金额" align="right">
+          <template #default="{ row }">{{ row.amount.toFixed(2) }}</template>
+        </el-table-column>
+        <el-table-column label="" width="70">
+          <template #default="{ $index }">
+            <el-popconfirm title="删除该笔付款？" @confirm="removePayment($index)">
+              <template #reference><el-button link type="danger">删除</el-button></template>
+            </el-popconfirm>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="pay-add">
+        <el-date-picker v-model="payForm.date" type="date" value-format="YYYY-MM-DD" placeholder="付款日期" />
+        <el-input-number v-model="payForm.amount" :min="0.01" :precision="2" controls-position="right" placeholder="金额" />
+        <el-button type="primary" :loading="saving" @click="addPayment">登记</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -145,6 +195,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api.js'
+import { downloadExcel } from '../download.js'
 
 const PO_STATUS = { pending: '待入库', partial: '部分入库', done: '已入库', void: '已作废' }
 const STATUS_TYPE = { pending: 'warning', partial: 'primary', done: 'success', void: 'info' }
@@ -255,6 +306,63 @@ async function voidOrder(row) {
   load()
 }
 
+// ---- 差异结案 / 付款登记 ----
+const diffDlg = ref(false)
+const diffOrder = ref(null)
+const diffNote = ref('')
+const payDlg = ref(false)
+const payOrder = ref(null)
+const payForm = reactive({ date: '', amount: null })
+
+const paidOf = (row) => (row?.payments || []).reduce((s, p) => s + p.amount, 0)
+
+function openCloseDiff(row) {
+  diffOrder.value = row
+  diffNote.value = ''
+  diffDlg.value = true
+}
+
+async function saveCloseDiff() {
+  if (!diffNote.value.trim()) return ElMessage.warning('请填写差异原因')
+  saving.value = true
+  try {
+    await api.post(`/purchases/${diffOrder.value._id}/close-diff`, { diffNote: diffNote.value.trim() })
+    ElMessage.success('已结案')
+    diffDlg.value = false
+    load()
+  } finally {
+    saving.value = false
+  }
+}
+
+function openPayments(row) {
+  payOrder.value = row
+  payForm.date = new Date().toISOString().slice(0, 10)
+  payForm.amount = Math.max(0, Math.round((row.payable - paidOf(row)) * 100) / 100) || null
+  payDlg.value = true
+}
+
+async function addPayment() {
+  if (!payForm.amount || payForm.amount <= 0) return ElMessage.warning('请输入付款金额')
+  saving.value = true
+  try {
+    const { doc } = await api.post(`/purchases/${payOrder.value._id}/payments`, payForm)
+    payOrder.value = doc
+    payForm.amount = Math.max(0, Math.round((doc.payable - paidOf(doc)) * 100) / 100) || null
+    ElMessage.success('已登记')
+    load()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removePayment(idx) {
+  const { doc } = await api.delete(`/purchases/${payOrder.value._id}/payments/${idx}`)
+  payOrder.value = doc
+  ElMessage.success('已删除')
+  load()
+}
+
 onMounted(() => { load(); loadRefs() })
 </script>
 
@@ -266,4 +374,6 @@ onMounted(() => { load(); loadRefs() })
 .muted { color: #909399; font-size: 12px; }
 .total { text-align: right; margin-top: 8px; font-weight: 600; }
 .recv-tip { margin-bottom: 12px; }
+.pay-summary { margin-bottom: 10px; }
+.pay-add { display: flex; gap: 8px; margin-top: 10px; }
 </style>
