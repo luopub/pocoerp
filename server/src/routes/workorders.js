@@ -42,9 +42,10 @@ router.get('/:id', wrap(async (req, res) => {
   res.json({ doc })
 }))
 
-// POST /api/workorders  { spuNo, planItems: [{sku, qty}], remark }
+// POST /api/workorders  { spuNo, planItems: [{sku, qty}], materialInput: {materialSku, qty}, remark }
+// 建单须指定主材及输入量（作为首道工序输入）；约束 Σ各SKU计划×单位用量 ≤ 主材输入量
 router.post('/', canWrite, wrap(async (req, res) => {
-  const { spuNo, planItems = [], remark = '' } = req.body || {}
+  const { spuNo, planItems = [], materialInput = null, remark = '' } = req.body || {}
   const product = await Product.findOne({ no: spuNo }).lean()
   if (!product) return bad(res, '产品不存在')
   if (product.kind !== 'physical') return bad(res, '虚拟组合产品不能下加工单')
@@ -57,10 +58,30 @@ router.post('/', canWrite, wrap(async (req, res) => {
     if (!product.skus.some((s) => s.no === it.sku)) return bad(res, `SKU ${it.sku} 不属于该产品`)
   }
 
+  const mainRows = product.bom.filter((b) => b.bomType === 'main')
+  if (!mainRows.length) return bad(res, '该产品 BOM 未配置主材')
+  const mainMaterials = [...new Set(mainRows.map((b) => b.materialSku))]
+  if (!materialInput?.materialSku || !mainMaterials.includes(materialInput.materialSku)) {
+    return bad(res, `请选择主材（${mainMaterials.join(' / ')}）作为首道工序输入`)
+  }
+  if (await Material.countDocuments({ 'skus.no': materialInput.materialSku }) === 0) {
+    return bad(res, `材料 SKU ${materialInput.materialSku} 不存在`)
+  }
+  const inputQty = Number(materialInput.qty)
+  if (!inputQty || inputQty <= 0) return bad(res, '主材输入量必须大于 0')
+  const usageOf = (sku) => mainRows
+    .filter((b) => !b.applySkus?.length || b.applySkus.includes(sku))
+    .reduce((s, b) => s + b.usage, 0)
+  const required = planItems.reduce((s, it) => s + it.qty * usageOf(it.sku), 0)
+  if (required - inputQty > 1e-6) {
+    return bad(res, `计划总用料 ${Math.round(required * 1000) / 1000} 超出主材输入量 ${inputQty}`)
+  }
+
   const no = await nextNo('WKO')
   const doc = await WorkOrder.create({
     no, spuNo, remark, operator: req.user.username,
     planItems: planItems.map((it) => ({ sku: it.sku, qty: it.qty, receivedQty: 0 })),
+    materialInput: { materialSku: materialInput.materialSku, qty: inputQty },
     bomSnapshot: product.bom.map((b) => ({ ...b })),
     processes: product.processTemplate.map((p, i) => ({
       no: subNo(no, i + 1), seq: i + 1, name: p.name, expectedDays: p.expectedDays,
@@ -120,6 +141,21 @@ router.post('/:id/steps/:seq/start', canWrite, wrap(async (req, res) => {
   step.supplier = req.body?.supplier || ''
   doc.currentStep = seq
   doc.status = 'processing'
+  // 首道工序开始：按建单时的主材输入自动发料（扣减材料库存；库存不足则整体回滚）
+  const mi = doc.materialInput
+  if (seq === 1 && mi?.qty > 0
+    && !doc.issues.some((i) => i.stepSeq === 1 && i.materialSku === mi.materialSku)) {
+    await withTxn(async (session) => {
+      const r = await applyInventoryChange({
+        itemType: 'material', sku: mi.materialSku, change: -mi.qty,
+        type: LOG_TYPES.ISSUE_OUT, docId: doc._id, docNo: doc.no,
+        operator: req.user.username,
+      }, session)
+      doc.issues.push({ stepSeq: 1, materialSku: mi.materialSku, qty: mi.qty, unitCost: r.avgCost })
+      await doc.save({ session })
+    })
+    return res.json({ doc })
+  }
   await doc.save()
   res.json({ doc })
 }))

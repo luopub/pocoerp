@@ -52,10 +52,24 @@
         <el-form-item v-if="createForm.spu" label="工序">
           <span class="muted">{{ createForm.spu.processTemplate.map((p) => p.name).join(' → ') }}</span>
         </el-form-item>
+        <el-form-item v-if="createForm.spu" label="主材输入" required>
+          <div class="material-row">
+            <el-select v-model="createForm.materialSku" filterable placeholder="首道工序的主材">
+              <el-option v-for="m in mainMaterialOptions" :key="m.skuNo" :label="`${m.spuName} ${m.skuNo}（${attrsText(m.attrs)}）`" :value="m.skuNo" />
+            </el-select>
+            <el-input-number v-model="createForm.materialQty" :min="0.001" :precision="3" controls-position="right" placeholder="输入量" />
+          </div>
+        </el-form-item>
         <el-form-item v-if="createForm.spu" label="计划数量" required>
-          <div v-for="s in createForm.spu.skus.filter((x) => x.active)" :key="s.no" class="plan-row">
-            <span class="plan-sku">{{ s.no }}（{{ attrsText(s.attrs) }}）</span>
-            <el-input-number v-model="createForm.qtys[s.no]" :min="0" :precision="0" controls-position="right" />
+          <div class="plan-list">
+            <div v-for="s in createForm.spu.skus.filter((x) => x.active)" :key="s.no" class="plan-row">
+              <span class="plan-sku">{{ s.no }}（{{ attrsText(s.attrs) }}，用量 {{ usageOf(s.no) }}）</span>
+              <el-input-number v-model="createForm.qtys[s.no]" :min="0" :precision="0" controls-position="right" />
+            </div>
+            <div class="muted" :class="{ 'over-limit': overLimit }">
+              合计用料 {{ round3(totalUsage) }} / 主材输入 {{ createForm.materialQty || 0 }}
+              <template v-if="overLimit">（已超出，请调减计划或加大输入量）</template>
+            </div>
           </div>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="createForm.remark" /></el-form-item>
@@ -72,6 +86,9 @@
         <div class="d-head">
           <el-tag :type="STATUS_TYPE[detail.status]">{{ WKO_STATUS[detail.status] }}</el-tag>
           <span>{{ detail.spuName }}（{{ detail.spuNo }}）</span>
+          <span v-if="detail.materialInput?.qty" class="muted">
+            主材输入 {{ detail.materialInput.materialSku }} × {{ detail.materialInput.qty }}
+          </span>
           <span v-if="consumableText" class="muted">耗材成本 {{ consumableText }}/件</span>
           <el-button v-if="detail.status !== 'void'" size="small" type="primary" plain @click="openPayments">付款登记</el-button>
           <el-popconfirm v-if="canVoid" title="确定作废该加工单？" @confirm="voidOrder">
@@ -208,8 +225,25 @@ const spuOptions = ref([])
 const processors = ref([])
 const materialSkus = ref([])
 const completeQtys = reactive({})
-const createForm = reactive({ spuNo: '', spu: null, qtys: {}, remark: '' })
+const createForm = reactive({ spuNo: '', spu: null, qtys: {}, materialSku: '', materialQty: null, remark: '' })
 const issueForm = reactive({ materialSku: '', qty: 1 })
+
+// BOM 主材行（建单约束：Σ各SKU计划×单位用量 ≤ 主材输入量）
+const mainRows = computed(() => (createForm.spu?.bom || []).filter((b) => b.bomType === 'main'))
+const mainMaterialOptions = computed(() => {
+  const nos = new Set(mainRows.value.map((b) => b.materialSku))
+  return materialSkus.value.filter((m) => nos.has(m.skuNo))
+})
+function usageOf(skuNo) {
+  return mainRows.value
+    .filter((b) => !b.applySkus?.length || b.applySkus.includes(skuNo))
+    .reduce((s, b) => s + b.usage, 0)
+}
+const totalUsage = computed(() =>
+  Object.entries(createForm.qtys).reduce((s, [sku, q]) => s + (q || 0) * usageOf(sku), 0))
+const overLimit = computed(() =>
+  createForm.materialQty > 0 && totalUsage.value - createForm.materialQty > 1e-6)
+function round3(n) { return Math.round(n * 1000) / 1000 }
 
 const lastStepFinished = computed(() => {
   if (!detail.value?.processes?.length) return false
@@ -257,10 +291,12 @@ async function loadRefs() {
 function onSpuPick(no) {
   createForm.spu = spuOptions.value.find((p) => p.no === no) || null
   createForm.qtys = {}
+  createForm.materialSku = mainRows.value[0]?.materialSku || ''
+  createForm.materialQty = null
 }
 
 function openCreate() {
-  Object.assign(createForm, { spuNo: '', spu: null, qtys: {}, remark: '' })
+  Object.assign(createForm, { spuNo: '', spu: null, qtys: {}, materialSku: '', materialQty: null, remark: '' })
   createDlg.value = true
 }
 
@@ -268,9 +304,18 @@ async function saveCreate() {
   if (!createForm.spuNo) return ElMessage.warning('请选择产品')
   const planItems = Object.entries(createForm.qtys).filter(([, q]) => q > 0).map(([sku, qty]) => ({ sku, qty }))
   if (!planItems.length) return ElMessage.warning('请填写计划数量')
+  if (!createForm.materialSku) return ElMessage.warning('请选择主材')
+  if (!createForm.materialQty || createForm.materialQty <= 0) return ElMessage.warning('请填写主材输入量')
+  if (totalUsage.value - createForm.materialQty > 1e-6) {
+    return ElMessage.warning(`计划总用料 ${round3(totalUsage.value)} 超出主材输入量 ${createForm.materialQty}`)
+  }
   saving.value = true
   try {
-    await api.post('/workorders', { spuNo: createForm.spuNo, planItems, remark: createForm.remark })
+    await api.post('/workorders', {
+      spuNo: createForm.spuNo, planItems,
+      materialInput: { materialSku: createForm.materialSku, qty: createForm.materialQty },
+      remark: createForm.remark,
+    })
     ElMessage.success('加工单已创建')
     createDlg.value = false
     load()
@@ -398,6 +443,10 @@ onMounted(() => { load(); loadRefs() })
 .muted { color: #909399; font-size: 12px; }
 .plan-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; width: 100%; }
 .plan-sku { min-width: 260px; }
+.plan-list { width: 100%; }
+.material-row { display: flex; gap: 12px; width: 100%; }
+.material-row .el-select { flex: 1; }
+.over-limit { color: #f56c6c; }
 .d-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .step-card { border: 1px solid #e4e7ed; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
 .step-card.active { border-color: #409eff; }

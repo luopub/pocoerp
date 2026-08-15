@@ -64,6 +64,11 @@ const workOrderSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'processing', 'done', 'void'], default: 'pending' },
   currentStep: { type: Number, default: 0 }, // 当前工序序号（0=未开始）
   planItems: { type: [planItemSchema], default: [] },
+  // 建单时指定的主材输入（作为首道工序的输入；首工序开始时自动发料扣库存）
+  materialInput: {
+    materialSku: { type: String, default: '' },
+    qty: { type: Number, default: 0 },
+  },
   // 创建时的 BOM 快照（此后改产品 BOM 不影响本单）
   bomSnapshot: { type: Array, default: [] },
   processes: { type: [processRecordSchema], default: [] },
