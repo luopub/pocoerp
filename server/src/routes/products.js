@@ -118,7 +118,7 @@ router.get('/:id', wrap(async (req, res) => {
 router.post('/', canWrite, wrap(async (req, res) => {
   const {
     name, category = '', kind = 'physical', source = 'direct',
-    defaultSupplier = '', consumableCost = 0, processTemplate = [],
+    defaultSupplier = '', processTemplate = [],
     bom = [], components = [], remark = '', skus = [],
     warnWindowDays = null, warnDays = null, replenishDays = null,
   } = req.body || {}
@@ -135,13 +135,14 @@ router.post('/', canWrite, wrap(async (req, res) => {
   const no = await nextNo('PRD')
   const doc = new Product({
     no, name: name.trim(), category, kind, source, defaultSupplier,
-    consumableCost, processTemplate, bom, components, remark,
+    processTemplate, bom, components, remark,
     warnWindowDays, warnDays, replenishDays,
   })
   const skuList = skus.length ? skus : [{ attrs: {}, safeStock: 0 }]
   skuList.forEach((s, i) => {
     doc.skus.push({
       no: subNo(no, i + 1), attrs: s.attrs || {}, safeStock: s.safeStock || 0,
+      consumableCost: s.consumableCost || 0,
       image: s.image || '', remark: s.remark || '',
     })
   })
@@ -166,7 +167,7 @@ router.put('/:id', canWrite, wrap(async (req, res) => {
     }
     doc.components = b.components
   }
-  for (const f of ['name', 'category', 'source', 'defaultSupplier', 'consumableCost',
+  for (const f of ['name', 'category', 'source', 'defaultSupplier',
     'processTemplate', 'remark', 'warnWindowDays', 'warnDays', 'replenishDays']) {
     if (b[f] !== undefined) doc[f] = b[f]
   }
@@ -179,14 +180,14 @@ router.put('/:id', canWrite, wrap(async (req, res) => {
 // POST /api/products/:id/skus  新增 SKU（自动生成默认映射）
 // 继续新增前，现有默认 SKU 须先添加规格属性（避免多个无属性 SKU 无法区分）
 router.post('/:id/skus', canWrite, wrap(async (req, res) => {
-  const { attrs = {}, safeStock = 0, image = '', remark = '' } = req.body || {}
+  const { attrs = {}, safeStock = 0, consumableCost = 0, image = '', remark = '' } = req.body || {}
   const doc = await Product.findById(req.params.id)
   if (!doc) return res.status(404).json({ message: '产品不存在' })
   const noAttr = doc.skus.find((s) => !Object.keys(attrsToObj(s.attrs)).length)
   if (noAttr) {
     return res.status(400).json({ message: `请先为 SKU ${noAttr.no} 添加规格属性后再新增 SKU` })
   }
-  const sku = { no: nextSkuNo(doc), attrs, safeStock, image, remark }
+  const sku = { no: nextSkuNo(doc), attrs, safeStock, consumableCost, image, remark }
   doc.skus.push(sku)
   await doc.save()
   await ensureDefaultMapping(doc.no, sku.no)
@@ -200,7 +201,7 @@ router.put('/:id/skus/:skuNo', canWrite, wrap(async (req, res) => {
   const sku = doc.skus.find((s) => s.no === req.params.skuNo)
   if (!sku) return res.status(404).json({ message: 'SKU 不存在' })
   const b = req.body || {}
-  for (const f of ['attrs', 'image', 'safeStock', 'warnWindowDays', 'warnDays', 'replenishDays', 'remark']) {
+  for (const f of ['attrs', 'image', 'safeStock', 'consumableCost', 'warnWindowDays', 'warnDays', 'replenishDays', 'remark']) {
     if (b[f] !== undefined) sku[f] = b[f]
   }
   if (b.active !== undefined) sku.active = !!b.active

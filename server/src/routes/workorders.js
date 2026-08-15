@@ -38,7 +38,7 @@ router.get('/:id', wrap(async (req, res) => {
   if (!doc) return res.status(404).json({ message: '加工单不存在' })
   const p = await Product.findOne({ no: doc.spuNo }).lean()
   doc.spuName = p?.name || ''
-  doc.consumableCost = p?.consumableCost || 0
+  doc.skuConsumables = Object.fromEntries((p?.skus || []).map((s) => [s.no, s.consumableCost || 0]))
   res.json({ doc })
 }))
 
@@ -193,7 +193,7 @@ router.post('/:id/issue', canWrite, wrap(async (req, res) => {
 /**
  * POST /api/workorders/:id/complete  完工入库 { items: [{sku, qty}] }
  * 最后一道工序完成后才可入库；可分次（按 SKU）。
- * 成本：单件成本 =（已发料成本 + 已录加工费）÷ 计划总数量；入库单位成本 = 单件成本 + 单位耗材成本
+ * 成本：单件成本 =（已发料成本 + 已录加工费）÷ 计划总数量；入库单位成本 = 单件成本 + 该 SKU 单位耗材成本
  */
 router.post('/:id/complete', canWrite, wrap(async (req, res) => {
   const doc = await WorkOrder.findById(req.params.id)
@@ -205,7 +205,7 @@ router.post('/:id/complete', canWrite, wrap(async (req, res) => {
   const reqItems = req.body?.items || []
   if (!reqItems.length) return bad(res, '至少一行入库明细')
   const product = await Product.findOne({ no: doc.spuNo }).lean()
-  const consumable = product?.consumableCost || 0
+  const consumableOf = new Map((product?.skus || []).map((s) => [s.no, s.consumableCost || 0]))
 
   const batch = []
   for (const it of reqItems) {
@@ -222,12 +222,13 @@ router.post('/:id/complete', canWrite, wrap(async (req, res) => {
   const materialCost = doc.issues.reduce((s, i) => s + i.qty * (i.unitCost || 0), 0)
   const feeTotal = doc.processes.reduce((s, p) => s + (p.fee || 0), 0)
   const totalPlanQty = doc.planItems.reduce((s, p) => s + p.qty, 0)
-  const perUnit = (materialCost + feeTotal) / totalPlanQty + consumable
+  const perUnit = (materialCost + feeTotal) / totalPlanQty
 
   await withTxn(async (session) => {
     for (const { plan, qty } of batch) {
       await applyInventoryChange({
-        itemType: 'product', sku: plan.sku, change: qty, unitCost: perUnit,
+        itemType: 'product', sku: plan.sku, change: qty,
+        unitCost: perUnit + (consumableOf.get(plan.sku) || 0),
         type: LOG_TYPES.WORK_IN, docId: doc._id, docNo: doc.no,
         operator: req.user.username,
       }, session)

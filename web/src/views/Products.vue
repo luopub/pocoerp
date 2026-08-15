@@ -24,6 +24,7 @@
               <template #default="{ row: s }">{{ attrsText(s.attrs) }}</template>
             </el-table-column>
             <el-table-column prop="safeStock" label="安全库存" width="90" align="right" />
+            <el-table-column prop="consumableCost" label="耗材成本" width="90" align="right" />
             <el-table-column label="状态" width="70">
               <template #default="{ row: s }">
                 <el-tag :type="s.active ? 'success' : 'info'" size="small">{{ s.active ? '启用' : '停用' }}</el-tag>
@@ -56,7 +57,6 @@
         <template #default="{ row }">{{ SOURCE_NAMES[row.source] }}</template>
       </el-table-column>
       <el-table-column prop="defaultSupplier" label="默认供应商" width="120" show-overflow-tooltip />
-      <el-table-column prop="consumableCost" label="耗材成本" width="90" align="right" />
       <el-table-column label="SKU 数" width="75" align="right">
         <template #default="{ row }">{{ row.skus.length }}</template>
       </el-table-column>
@@ -107,11 +107,6 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
-            <el-form-item label="单位耗材成本">
-              <el-input-number v-model="form.consumableCost" :min="0" :precision="2" controls-position="right" />
-            </el-form-item>
-          </el-col>
           <el-col :span="24">
             <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
           </el-col>
@@ -153,6 +148,9 @@
         <el-form-item label="规格属性"><AttrsEditor v-model="skuForm.attrs" /></el-form-item>
         <el-form-item label="图片"><ImageUpload v-model="skuForm.image" /></el-form-item>
         <el-form-item label="安全库存"><el-input-number v-model="skuForm.safeStock" :min="0" /></el-form-item>
+        <el-form-item label="单位耗材成本">
+          <el-input-number v-model="skuForm.consumableCost" :min="0" :precision="2" controls-position="right" />
+        </el-form-item>
         <el-form-item v-if="skuForm.no" label="状态">
           <el-switch v-model="skuForm.active" active-text="启用" inactive-text="停用" />
         </el-form-item>
@@ -189,11 +187,11 @@ const dlg = ref(false)
 const skuDlg = ref(false)
 const emptyForm = () => ({
   _id: '', no: '', name: '', category: '', kind: 'physical', source: 'direct',
-  defaultSupplier: '', consumableCost: 0, remark: '', active: true,
+  defaultSupplier: '', remark: '', active: true,
   processTemplate: [], bom: [], components: [], skus: [],
 })
 const form = reactive(emptyForm())
-const skuForm = reactive({ spuId: '', spuName: '', no: '', attrs: {}, image: '', safeStock: 0, active: true })
+const skuForm = reactive({ spuId: '', spuName: '', no: '', attrs: {}, image: '', safeStock: 0, consumableCost: 0, active: true })
 const isAdmin = computed(() => auth.role === 'admin')
 
 function attrsText(attrs) {
@@ -233,7 +231,7 @@ function openEdit(row) {
 function productFormData(row) {
   return {
     _id: row._id, no: row.no, name: row.name, category: row.category, kind: row.kind,
-    source: row.source, defaultSupplier: row.defaultSupplier, consumableCost: row.consumableCost,
+    source: row.source, defaultSupplier: row.defaultSupplier,
     remark: row.remark, active: row.active,
     processTemplate: row.processTemplate.map((p) => ({ ...p })),
     bom: row.bom.map((b) => ({ ...b, applySkus: [...(b.applySkus || [])] })),
@@ -274,16 +272,16 @@ async function save() {
 
 function openSkuEdit(spu, sku) {
   Object.assign(skuForm, sku
-    ? { spuId: spu._id, spuName: spu.name, no: sku.no, attrs: { ...(sku.attrs || {}) }, image: sku.image || '', safeStock: sku.safeStock, active: sku.active }
-    : { spuId: spu._id, spuName: spu.name, no: '', attrs: {}, image: '', safeStock: 0, active: true })
+    ? { spuId: spu._id, spuName: spu.name, no: sku.no, attrs: { ...(sku.attrs || {}) }, image: sku.image || '', safeStock: sku.safeStock, consumableCost: sku.consumableCost || 0, active: sku.active }
+    : { spuId: spu._id, spuName: spu.name, no: '', attrs: {}, image: '', safeStock: 0, consumableCost: 0, active: true })
   skuDlg.value = true
 }
 
-// 复制：以旧 SKU 的规格/图片/安全库存为初始数据新增（不带编号，保存时生成新子号）
+// 复制：以旧 SKU 的规格/图片/安全库存/耗材成本为初始数据新增（不带编号，保存时生成新子号）
 function openSkuCopy(spu, sku) {
   Object.assign(skuForm, {
     spuId: spu._id, spuName: spu.name, no: '',
-    attrs: { ...(sku.attrs || {}) }, image: sku.image || '', safeStock: sku.safeStock, active: true,
+    attrs: { ...(sku.attrs || {}) }, image: sku.image || '', safeStock: sku.safeStock, consumableCost: sku.consumableCost || 0, active: true,
   })
   skuDlg.value = true
 }

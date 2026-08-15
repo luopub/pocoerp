@@ -7,6 +7,7 @@ const productSkuSchema = new mongoose.Schema(
     attrs: { type: Map, of: String, default: {} }, // 规格属性，如 {颜色: '红', 尺寸: '大'}
     image: { type: String, default: '' }, // 图片路径 /uploads/xxx
     safeStock: { type: Number, default: 0 },
+    consumableCost: { type: Number, default: 0 }, // 单位耗材成本（情景 4，按 SKU 设置）
     // 预警/补货参数：null = 继承 SPU / 全局默认（需求文档情景 11）
     warnWindowDays: { type: Number, default: null },
     warnDays: { type: Number, default: null },
@@ -56,7 +57,6 @@ const productSchema = new mongoose.Schema({
   kind: { type: String, enum: ['physical', 'virtual'], default: 'physical' }, // 实物/虚拟组合
   source: { type: String, enum: ['direct', 'outsourced', 'both'], default: 'direct' }, // 直接采购/委外加工/两者皆可
   defaultSupplier: { type: String, default: '' },
-  consumableCost: { type: Number, default: 0 }, // 单位耗材成本（情景 4）
   processTemplate: { type: [processStepSchema], default: [] }, // 委外加工类产品用
   bom: { type: [bomSchema], default: [] },
   components: { type: [componentSchema], default: [] }, // 仅虚拟组合

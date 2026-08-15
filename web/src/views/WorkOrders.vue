@@ -72,7 +72,7 @@
         <div class="d-head">
           <el-tag :type="STATUS_TYPE[detail.status]">{{ WKO_STATUS[detail.status] }}</el-tag>
           <span>{{ detail.spuName }}（{{ detail.spuNo }}）</span>
-          <span class="muted">耗材成本 {{ detail.consumableCost }}/件</span>
+          <span v-if="consumableText" class="muted">耗材成本 {{ consumableText }}/件</span>
           <el-button v-if="detail.status !== 'void'" size="small" type="primary" plain @click="openPayments">付款登记</el-button>
           <el-popconfirm v-if="canVoid" title="确定作废该加工单？" @confirm="voidOrder">
             <template #reference><el-button size="small" type="danger" plain>作废</el-button></template>
@@ -218,6 +218,12 @@ const lastStepFinished = computed(() => {
 const canVoid = computed(() =>
   detail.value && detail.value.status !== 'void' && detail.value.status !== 'done'
   && !detail.value.issues.length && detail.value.planItems.every((p) => p.receivedQty === 0))
+// 各 SKU 耗材成本（SKU 级设置，如 "001:0.8，002:0.5"）
+const consumableText = computed(() =>
+  Object.entries(detail.value?.skuConsumables || {})
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `${k.split('-')[1]}:${v}`)
+    .join('，'))
 
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})

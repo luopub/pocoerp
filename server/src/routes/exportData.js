@@ -27,8 +27,9 @@ const EXPORTERS = {
       { header: 'SPU编号', key: 'no', width: 14 }, { header: '名称', key: 'name', width: 20 },
       { header: '分类', key: 'category', width: 10 }, { header: '类型', key: 'kind', width: 10 },
       { header: '来源方式', key: 'source', width: 12 }, { header: '默认供应商', key: 'defaultSupplier', width: 16 },
-      { header: '耗材成本', key: 'consumableCost', width: 10 }, { header: 'SKU编号', key: 'skuNo', width: 16 },
+      { header: 'SKU编号', key: 'skuNo', width: 16 },
       { header: '规格属性', key: 'attrs', width: 20 }, { header: '安全库存', key: 'safeStock', width: 10 },
+      { header: '耗材成本', key: 'consumableCost', width: 10 },
     ],
     async rows() {
       const KIND = { physical: '实物', virtual: '虚拟组合' }
@@ -38,8 +39,8 @@ const EXPORTERS = {
         for (const s of p.skus) {
           out.push({
             no: p.no, name: p.name, category: p.category, kind: KIND[p.kind],
-            source: SRC[p.source], defaultSupplier: p.defaultSupplier, consumableCost: p.consumableCost,
-            skuNo: s.no, attrs: attrsText(s.attrs), safeStock: s.safeStock,
+            source: SRC[p.source], defaultSupplier: p.defaultSupplier,
+            skuNo: s.no, attrs: attrsText(s.attrs), safeStock: s.safeStock, consumableCost: s.consumableCost || 0,
           })
         }
       }

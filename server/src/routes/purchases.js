@@ -88,7 +88,7 @@ router.post('/', canWrite, wrap(async (req, res) => {
 /**
  * POST /api/purchases/:id/receive  入库（支持分次）
  * body: { items?: [{no, qty}] }  缺省 = 全部剩余数量
- * 成品入库单位成本 = 采购单价 + 产品单位耗材成本（需求文档 4.5.1）
+ * 成品入库单位成本 = 采购单价 + 该 SKU 单位耗材成本（需求文档 4.5.1）
  */
 router.post('/:id/receive', canWrite, wrap(async (req, res) => {
   const doc = await PurchaseOrder.findById(req.params.id)
@@ -118,7 +118,8 @@ router.post('/:id/receive', canWrite, wrap(async (req, res) => {
       let unitCost = item.price
       if (doc.type === 'product') {
         const spu = await Product.findOne({ 'skus.no': item.sku }).session(session).lean()
-        unitCost = item.price + (spu?.consumableCost || 0)
+        const sku = spu?.skus.find((s) => s.no === item.sku)
+        unitCost = item.price + (sku?.consumableCost || 0)
       }
       await applyInventoryChange({
         itemType: doc.type, sku: item.sku, change: qty, unitCost,

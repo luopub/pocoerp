@@ -59,6 +59,14 @@ await connectDB()
 // 启动时校正单号计数器，防止与既有数据冲突
 const { syncCounters } = await import('./services/numbering.js')
 await syncCounters()
+// 启动时迁移：SPU 级耗材成本下沉到各 SKU（旧数据兼容，迁移后删除 SPU 字段）
+const { Product } = await import('./models/product.js')
+const legacy = await Product.collection.find({ consumableCost: { $gt: 0 } }).toArray()
+for (const p of legacy) {
+  const skus = (p.skus || []).map((s) => ({ ...s, consumableCost: s.consumableCost || p.consumableCost }))
+  await Product.collection.updateOne({ _id: p._id }, { $set: { skus }, $unset: { consumableCost: '' } })
+}
+if (legacy.length) console.log(`[migrate] 耗材成本已下沉到 SKU：${legacy.length} 个产品`)
 app.listen(config.port, () => {
   console.log(`[server] PocoERP API listening on http://localhost:${config.port}`)
 })
