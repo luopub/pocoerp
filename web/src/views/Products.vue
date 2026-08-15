@@ -29,9 +29,10 @@
                 <el-tag :type="s.active ? 'success' : 'info'" size="small">{{ s.active ? '启用' : '停用' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="90">
+            <el-table-column label="操作" width="130">
               <template #default="{ row: s }">
                 <el-button link type="primary" @click="openSkuEdit(row, s)">编辑</el-button>
+                <el-button link type="primary" @click="openSkuCopy(row, s)">复制</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -56,9 +57,10 @@
       <el-table-column label="SKU 数" width="75" align="right">
         <template #default="{ row }">{{ row.skus.length }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="90" fixed="right">
+      <el-table-column label="操作" width="130" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="primary" @click="openCopy(row)">复制</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -216,7 +218,12 @@ async function loadRefs() {
 }
 
 function openEdit(row) {
-  Object.assign(form, emptyForm(), row ? {
+  Object.assign(form, emptyForm(), row ? productFormData(row) : {})
+  dlg.value = true
+}
+
+function productFormData(row) {
+  return {
     _id: row._id, no: row.no, name: row.name, category: row.category, kind: row.kind,
     source: row.source, defaultSupplier: row.defaultSupplier, consumableCost: row.consumableCost,
     remark: row.remark, active: row.active,
@@ -224,7 +231,18 @@ function openEdit(row) {
     bom: row.bom.map((b) => ({ ...b, applySkus: [...(b.applySkus || [])] })),
     components: row.components.map((c) => ({ ...c })),
     skus: row.skus,
-  } : {})
+  }
+}
+
+// 复制：以旧产品为初始数据新增（不带编号与 SKU；BOM 适用 SKU 清空=全部）
+function openCopy(row) {
+  const data = productFormData(row)
+  Object.assign(form, emptyForm(), {
+    ...data,
+    _id: '', no: '',
+    bom: data.bom.map((b) => ({ ...b, applySkus: [] })),
+    skus: [],
+  })
   dlg.value = true
 }
 
@@ -250,6 +268,15 @@ function openSkuEdit(spu, sku) {
   Object.assign(skuForm, sku
     ? { spuId: spu._id, spuName: spu.name, no: sku.no, attrs: { ...(sku.attrs || {}) }, image: sku.image || '', safeStock: sku.safeStock, active: sku.active }
     : { spuId: spu._id, spuName: spu.name, no: '', attrs: {}, image: '', safeStock: 0, active: true })
+  skuDlg.value = true
+}
+
+// 复制：以旧 SKU 的规格/图片/安全库存为初始数据新增（不带编号，保存时生成新子号）
+function openSkuCopy(spu, sku) {
+  Object.assign(skuForm, {
+    spuId: spu._id, spuName: spu.name, no: '',
+    attrs: { ...(sku.attrs || {}) }, image: sku.image || '', safeStock: sku.safeStock, active: true,
+  })
   skuDlg.value = true
 }
 
