@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { Material } from '../models/material.js'
 import { nextNo, subNo } from '../services/numbering.js'
+import { stockMap } from '../services/stockQuery.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { wrap } from '../util.js'
 
@@ -36,11 +37,16 @@ router.get('/', wrap(async (req, res) => {
 // GET /api/materials/skus  扁平 SKU 列表（下拉选择用）
 router.get('/skus', wrap(async (req, res) => {
   const mats = await Material.find({ active: true }).lean()
+  const skuNos = mats.flatMap((m) => m.skus.filter((s) => s.active).map((s) => s.no))
+  const stocks = await stockMap('material', skuNos)
   const list = []
   for (const m of mats) {
     for (const s of m.skus) {
       if (!s.active) continue
-      list.push({ spuNo: m.no, spuName: m.name, unit: m.unit, skuNo: s.no, attrs: attrsToObj(s.attrs) })
+      list.push({
+        spuNo: m.no, spuName: m.name, unit: m.unit, skuNo: s.no,
+        attrs: attrsToObj(s.attrs), qty: stocks.get(s.no)?.qty || 0,
+      })
     }
   }
   res.json({ list })

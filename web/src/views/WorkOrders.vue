@@ -54,10 +54,11 @@
         </el-form-item>
         <el-form-item v-if="createForm.spu" label="主材输入" required>
           <div class="material-row">
-            <el-select v-model="createForm.materialSku" filterable placeholder="首道工序的主材">
-              <el-option v-for="m in mainMaterialOptions" :key="m.skuNo" :label="`${m.spuName} ${m.skuNo}（${attrsText(m.attrs)}）`" :value="m.skuNo" />
+            <el-select v-model="createForm.materialSku" filterable placeholder="首道工序的主材" @change="onMaterialPick">
+              <el-option v-for="m in mainMaterialOptions" :key="m.skuNo"
+                :label="`${m.spuName} ${m.skuNo}（${attrsText(m.attrs)}，库存 ${m.qty} ${m.unit || ''}）`" :value="m.skuNo" />
             </el-select>
-            <el-input-number v-model="createForm.materialQty" :min="0.001" :precision="3" controls-position="right" placeholder="输入量" />
+            <el-input-number v-model="createForm.materialQty" :min="0.001" :precision="3" controls-position="right" placeholder="输入量" @change="autoFillPlans" />
           </div>
         </el-form-item>
         <el-form-item v-if="createForm.spu" label="计划数量" required>
@@ -291,8 +292,27 @@ async function loadRefs() {
 function onSpuPick(no) {
   createForm.spu = spuOptions.value.find((p) => p.no === no) || null
   createForm.qtys = {}
-  createForm.materialSku = mainRows.value[0]?.materialSku || ''
-  createForm.materialQty = null
+  onMaterialPick(mainRows.value[0]?.materialSku || '')
+}
+
+// 选择主材：默认填入该材料全部库存数量，并自动排满各 SKU 计划
+function onMaterialPick(skuNo) {
+  createForm.materialSku = skuNo
+  const m = materialSkus.value.find((x) => x.skuNo === skuNo)
+  createForm.materialQty = m?.qty > 0 ? m.qty : null
+  autoFillPlans()
+}
+
+// 按 SKU 顺序尽量排满：每个 SKU 计划 = ⌊剩余主材 ÷ 该 SKU 单位用量⌋
+function autoFillPlans() {
+  if (!createForm.spu) return
+  let remaining = createForm.materialQty || 0
+  for (const s of createForm.spu.skus.filter((x) => x.active)) {
+    const u = usageOf(s.no)
+    const q = u > 0 ? Math.floor((remaining + 1e-9) / u) : 0
+    createForm.qtys[s.no] = q
+    remaining = Math.max(0, remaining - q * u)
+  }
 }
 
 function openCreate() {
