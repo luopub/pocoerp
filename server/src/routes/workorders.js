@@ -142,14 +142,14 @@ router.post('/:id/steps/:seq/start', canWrite, wrap(async (req, res) => {
   step.supplier = req.body?.supplier || ''
   doc.currentStep = seq
   doc.status = 'processing'
-  // 数量自动流转：首道工序输入=计划数量；后续工序输入=上一道工序产出
+  // 数量自动流转：首道工序输入=计划数量；后续工序输入=上一道工序产出；输出默认=输入
   const srcQtys = seq === 1
     ? doc.planItems.map((p) => ({ sku: p.sku, inQty: p.qty }))
     : (doc.processes.find((p) => p.seq === seq - 1)?.qtys || []).map((q) => ({ sku: q.sku, inQty: q.outQty }))
   for (const s of srcQtys) {
     const t = step.qtys.find((x) => x.sku === s.sku)
-    if (t) t.inQty = s.inQty
-    else step.qtys.push({ sku: s.sku, inQty: s.inQty, outQty: 0 })
+    if (t) { t.inQty = s.inQty; t.outQty = s.inQty }
+    else step.qtys.push({ sku: s.sku, inQty: s.inQty, outQty: s.inQty })
   }
   // 首道工序开始：按建单时的主材输入自动发料（扣减材料库存；库存不足则整体回滚）
   const mi = doc.materialInput

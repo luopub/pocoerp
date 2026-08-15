@@ -352,7 +352,14 @@ async function openDetail(row) {
 
 function completeQtysClear() {
   for (const k of Object.keys(completeQtys)) delete completeQtys[k]
-  for (const p of detail.value?.planItems || []) completeQtys[p.sku] = p.qty - p.receivedQty
+  // 最后一道工序完工后，默认入库数量=该工序产出（不超过剩余计划）；否则=剩余计划
+  const procs = detail.value?.processes || []
+  const last = procs[procs.length - 1]
+  const outOf = new Map((last?.finishedAt ? last.qtys : []).map((q) => [q.sku, q.outQty]))
+  for (const p of detail.value?.planItems || []) {
+    const remaining = p.qty - p.receivedQty
+    completeQtys[p.sku] = Math.min(outOf.get(p.sku) ?? remaining, remaining)
+  }
 }
 
 async function refresh() {
@@ -379,7 +386,9 @@ async function saveStep(p) {
 async function finishStep(p) {
   await api.post(`/workorders/${detail.value._id}/steps/${p.seq}/finish`)
   ElMessage.success(`工序「${p.name}」已完成`)
-  refresh()
+  await refresh()
+  // 最后一道工序完成后，产出自动填入完工入库数量，等待确认
+  if (lastStepFinished.value) completeQtysClear()
 }
 
 async function openIssue(p) {
