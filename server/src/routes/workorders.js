@@ -260,13 +260,15 @@ router.post('/:id/complete', canWrite, wrap(async (req, res) => {
   if (!reqItems.length) return bad(res, '至少一行入库明细')
   const product = await Product.findOne({ no: doc.spuNo }).lean()
   const consumableOf = new Map((product?.skus || []).map((s) => [s.no, s.consumableCost || 0]))
+  // 完工数量以末道工序实际产出为准（产出可与计划不同，如裁片后调整分配）
+  const lastOut = new Map((last.qtys || []).map((q) => [q.sku, q.outQty]))
 
   const batch = []
   for (const it of reqItems) {
     const plan = doc.planItems.find((p) => p.sku === it.sku)
     if (!plan) return bad(res, `SKU ${it.sku} 不在计划明细中`)
     const qty = Number(it.qty)
-    const remaining = plan.qty - plan.receivedQty
+    const remaining = (lastOut.get(it.sku) ?? plan.qty) - plan.receivedQty
     if (!qty || qty <= 0 || qty > remaining) {
       return bad(res, `SKU ${it.sku} 入库数量无效（剩余 ${remaining}）`)
     }
@@ -288,7 +290,7 @@ router.post('/:id/complete', canWrite, wrap(async (req, res) => {
       }, session)
       plan.receivedQty += qty
     }
-    if (doc.planItems.every((p) => p.receivedQty >= p.qty)) {
+    if (doc.planItems.every((p) => p.receivedQty >= (lastOut.get(p.sku) ?? p.qty))) {
       doc.status = 'done'
       doc.finishedAt = new Date()
     }

@@ -143,7 +143,7 @@
           <el-divider content-position="left">完工入库</el-divider>
           <div v-for="p in detail.planItems" :key="p.sku" class="plan-row">
             <span class="plan-sku">{{ p.sku }}（计划 {{ p.qty }}，已入 {{ p.receivedQty }}）</span>
-            <el-input-number v-model="completeQtys[p.sku]" :min="0" :max="p.qty - p.receivedQty" :precision="0" controls-position="right" />
+            <el-input-number v-model="completeQtys[p.sku]" :min="0" :max="completeMax(p)" :precision="0" controls-position="right" />
           </div>
           <el-button type="primary" :loading="saving" @click="complete">确认完工入库</el-button>
         </template>
@@ -350,16 +350,19 @@ async function openDetail(row) {
   detailDlg.value = true
 }
 
-function completeQtysClear() {
-  for (const k of Object.keys(completeQtys)) delete completeQtys[k]
-  // 最后一道工序完工后，默认入库数量=该工序产出（不超过剩余计划）；否则=剩余计划
+// 末道工序完工后，入库数量以其产出为准（产出可与计划不同，如裁片后调整分配）
+const lastOutMap = computed(() => {
   const procs = detail.value?.processes || []
   const last = procs[procs.length - 1]
-  const outOf = new Map((last?.finishedAt ? last.qtys : []).map((q) => [q.sku, q.outQty]))
-  for (const p of detail.value?.planItems || []) {
-    const remaining = p.qty - p.receivedQty
-    completeQtys[p.sku] = Math.min(outOf.get(p.sku) ?? remaining, remaining)
-  }
+  return new Map((last?.finishedAt ? last.qtys : []).map((q) => [q.sku, q.outQty]))
+})
+function completeMax(p) {
+  return (lastOutMap.value.get(p.sku) ?? p.qty) - p.receivedQty
+}
+
+function completeQtysClear() {
+  for (const k of Object.keys(completeQtys)) delete completeQtys[k]
+  for (const p of detail.value?.planItems || []) completeQtys[p.sku] = Math.max(0, completeMax(p))
 }
 
 async function refresh() {
