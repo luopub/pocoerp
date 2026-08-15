@@ -1,5 +1,12 @@
 import { Router } from 'express'
 import { Product } from '../models/product.js'
+import { Inventory, InventoryLog } from '../models/inventory.js'
+import { ListingMapping } from '../models/listingMapping.js'
+import { PurchaseOrder } from '../models/purchaseOrder.js'
+import { WorkOrder } from '../models/workOrder.js'
+import { OutboundOrder } from '../models/outboundOrder.js'
+import { ReturnOrder } from '../models/returnOrder.js'
+import { Stocktake } from '../models/stocktake.js'
 import { nextNo, subNo } from '../services/numbering.js'
 import { ensureDefaultMapping } from '../services/mapping.js'
 import { stockMap, derivedVirtualStock } from '../services/stockQuery.js'
@@ -9,6 +16,7 @@ import { wrap } from '../util.js'
 const router = Router()
 router.use(requireAuth)
 const canWrite = requireRole('admin', 'keeper')
+const canDelete = requireRole('admin')
 
 function attrsToObj(attrs) {
   if (!attrs) return {}
@@ -33,6 +41,22 @@ function validateBom(bom) {
     if (!b.usage || b.usage <= 0) return 'BOM 单位用量必须大于 0'
     if (b.bomType === 'aux' && !b.processStep) return '辅料必须指定投入工序'
   }
+  return null
+}
+
+/** SKU 删除前引用检查：有库存/流水/单据引用/被虚拟组合引用则返回错误文案，可删返回 null */
+async function skuUsageError(skuNo) {
+  const inv = await Inventory.findOne({ itemType: 'product', sku: skuNo }).lean()
+  if (inv?.qty) return `SKU ${skuNo} 仍有库存（${inv.qty}），不能删除`
+  if (await InventoryLog.exists({ sku: skuNo })) return `SKU ${skuNo} 已有库存流水，不能删除`
+  if (await PurchaseOrder.exists({ 'items.sku': skuNo })) return `SKU ${skuNo} 已关联采购单，不能删除`
+  if (await WorkOrder.exists({ $or: [{ 'planItems.sku': skuNo }, { 'processes.qtys.sku': skuNo }] })) {
+    return `SKU ${skuNo} 已关联加工单，不能删除`
+  }
+  if (await OutboundOrder.exists({ 'items.sku': skuNo })) return `SKU ${skuNo} 已关联出库单，不能删除`
+  if (await ReturnOrder.exists({ 'items.sku': skuNo })) return `SKU ${skuNo} 已关联退货入库单，不能删除`
+  if (await Stocktake.exists({ 'items.sku': skuNo })) return `SKU ${skuNo} 已关联盘点单，不能删除`
+  if (await Product.exists({ 'components.sku': skuNo })) return `SKU ${skuNo} 被虚拟组合产品引用，不能删除`
   return null
 }
 
@@ -153,10 +177,15 @@ router.put('/:id', canWrite, wrap(async (req, res) => {
 }))
 
 // POST /api/products/:id/skus  新增 SKU（自动生成默认映射）
+// 继续新增前，现有默认 SKU 须先添加规格属性（避免多个无属性 SKU 无法区分）
 router.post('/:id/skus', canWrite, wrap(async (req, res) => {
   const { attrs = {}, safeStock = 0, image = '', remark = '' } = req.body || {}
   const doc = await Product.findById(req.params.id)
   if (!doc) return res.status(404).json({ message: '产品不存在' })
+  const noAttr = doc.skus.find((s) => !Object.keys(attrsToObj(s.attrs)).length)
+  if (noAttr) {
+    return res.status(400).json({ message: `请先为 SKU ${noAttr.no} 添加规格属性后再新增 SKU` })
+  }
   const sku = { no: nextSkuNo(doc), attrs, safeStock, image, remark }
   doc.skus.push(sku)
   await doc.save()
@@ -177,6 +206,43 @@ router.put('/:id/skus/:skuNo', canWrite, wrap(async (req, res) => {
   if (b.active !== undefined) sku.active = !!b.active
   await doc.save()
   res.json({ sku, doc })
+}))
+
+// DELETE /api/products/:id  删除产品（仅管理员；任一 SKU 已被使用则拒绝）
+router.delete('/:id', canDelete, wrap(async (req, res) => {
+  const doc = await Product.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '产品不存在' })
+  if (await WorkOrder.exists({ spuNo: doc.no })) {
+    return res.status(400).json({ message: `产品 ${doc.no} 已关联加工单，不能删除` })
+  }
+  for (const s of doc.skus) {
+    const err = await skuUsageError(s.no)
+    if (err) return res.status(400).json({ message: err })
+  }
+  await ListingMapping.deleteMany({ skuNo: { $in: doc.skus.map((s) => s.no) } })
+  await Inventory.deleteMany({ itemType: 'product', sku: { $in: doc.skus.map((s) => s.no) } })
+  await doc.deleteOne()
+  res.json({ ok: true })
+}))
+
+// DELETE /api/products/:id/skus/:skuNo  删除 SKU（仅管理员；至少保留 1 个，已被使用则拒绝）
+router.delete('/:id/skus/:skuNo', canDelete, wrap(async (req, res) => {
+  const doc = await Product.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '产品不存在' })
+  const sku = doc.skus.find((s) => s.no === req.params.skuNo)
+  if (!sku) return res.status(404).json({ message: 'SKU 不存在' })
+  if (doc.skus.length <= 1) {
+    return res.status(400).json({ message: '产品至少保留 1 个 SKU，如需删除请删除整个产品' })
+  }
+  const err = await skuUsageError(sku.no)
+  if (err) return res.status(400).json({ message: err })
+  doc.skus = doc.skus.filter((s) => s.no !== sku.no)
+  // BOM「适用 SKU」中移除该 SKU，避免悬空引用
+  for (const b of doc.bom) b.applySkus = (b.applySkus || []).filter((no) => no !== sku.no)
+  await doc.save()
+  await ListingMapping.deleteMany({ skuNo: sku.no })
+  await Inventory.deleteOne({ itemType: 'product', sku: sku.no })
+  res.json({ ok: true })
 }))
 
 export default router

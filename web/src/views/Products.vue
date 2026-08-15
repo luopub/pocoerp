@@ -29,14 +29,17 @@
                 <el-tag :type="s.active ? 'success' : 'info'" size="small">{{ s.active ? '启用' : '停用' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="130">
+            <el-table-column label="操作" width="170">
               <template #default="{ row: s }">
                 <el-button link type="primary" @click="openSkuEdit(row, s)">编辑</el-button>
                 <el-button link type="primary" @click="openSkuCopy(row, s)">复制</el-button>
+                <el-popconfirm v-if="isAdmin" title="确定删除该 SKU？" @confirm="removeSku(row, s)">
+                  <template #reference><el-button link type="danger">删除</el-button></template>
+                </el-popconfirm>
               </template>
             </el-table-column>
           </el-table>
-          <el-button link type="primary" class="add-sku" @click="openSkuEdit(row, null)">+ 添加 SKU</el-button>
+          <el-button link type="primary" class="add-sku" @click="openSkuAdd(row)">+ 添加 SKU</el-button>
         </template>
       </el-table-column>
       <el-table-column prop="no" label="编号" width="110" />
@@ -57,10 +60,13 @@
       <el-table-column label="SKU 数" width="75" align="right">
         <template #default="{ row }">{{ row.skus.length }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="130" fixed="right">
+      <el-table-column label="操作" width="170" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button link type="primary" @click="openCopy(row)">复制</el-button>
+          <el-popconfirm v-if="isAdmin" title="确定删除该产品及其全部 SKU？" @confirm="remove(row)">
+            <template #reference><el-button link type="danger">删除</el-button></template>
+          </el-popconfirm>
         </template>
       </el-table-column>
     </el-table>
@@ -160,9 +166,10 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api.js'
+import { auth } from '../store.js'
 import { downloadExcel } from '../download.js'
 import AttrsEditor from '../components/AttrsEditor.vue'
 import ImageUpload from '../components/ImageUpload.vue'
@@ -187,6 +194,7 @@ const emptyForm = () => ({
 })
 const form = reactive(emptyForm())
 const skuForm = reactive({ spuId: '', spuName: '', no: '', attrs: {}, image: '', safeStock: 0, active: true })
+const isAdmin = computed(() => auth.role === 'admin')
 
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})
@@ -280,6 +288,13 @@ function openSkuCopy(spu, sku) {
   skuDlg.value = true
 }
 
+// 添加 SKU 前检查：默认 SKU 须先添加规格属性，否则无法区分（后端同样拦截）
+function openSkuAdd(spu) {
+  const noAttr = spu.skus.find((s) => !Object.keys(s.attrs || {}).length)
+  if (noAttr) return ElMessage.warning(`请先为 SKU ${noAttr.no} 添加规格属性后再新增 SKU`)
+  openSkuEdit(spu, null)
+}
+
 async function saveSku() {
   saving.value = true
   try {
@@ -291,6 +306,19 @@ async function saveSku() {
   } finally {
     saving.value = false
   }
+}
+
+async function remove(row) {
+  await api.delete(`/products/${row._id}`)
+  ElMessage.success('已删除')
+  load()
+  loadRefs()
+}
+
+async function removeSku(spu, sku) {
+  await api.delete(`/products/${spu._id}/skus/${sku.no}`)
+  ElMessage.success('已删除')
+  load()
 }
 
 onMounted(() => { load(); loadRefs() })
