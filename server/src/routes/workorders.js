@@ -85,7 +85,8 @@ router.post('/', canWrite, wrap(async (req, res) => {
     bomSnapshot: product.bom.map((b) => ({ ...b })),
     processes: product.processTemplate.map((p, i) => ({
       no: subNo(no, i + 1), seq: i + 1, name: p.name, expectedDays: p.expectedDays,
-      qtys: planItems.map((it) => ({ sku: it.sku, inQty: 0, outQty: 0 })),
+      // 数量自动流转：首道工序输入=计划数量，后续工序输入=上一道产出（开始/保存时同步）
+      qtys: planItems.map((it) => ({ sku: it.sku, inQty: i === 0 ? it.qty : 0, outQty: 0 })),
     })),
   })
   res.json({ doc })
@@ -141,6 +142,15 @@ router.post('/:id/steps/:seq/start', canWrite, wrap(async (req, res) => {
   step.supplier = req.body?.supplier || ''
   doc.currentStep = seq
   doc.status = 'processing'
+  // 数量自动流转：首道工序输入=计划数量；后续工序输入=上一道工序产出
+  const srcQtys = seq === 1
+    ? doc.planItems.map((p) => ({ sku: p.sku, inQty: p.qty }))
+    : (doc.processes.find((p) => p.seq === seq - 1)?.qtys || []).map((q) => ({ sku: q.sku, inQty: q.outQty }))
+  for (const s of srcQtys) {
+    const t = step.qtys.find((x) => x.sku === s.sku)
+    if (t) t.inQty = s.inQty
+    else step.qtys.push({ sku: s.sku, inQty: s.inQty, outQty: 0 })
+  }
   // 首道工序开始：按建单时的主材输入自动发料（扣减材料库存；库存不足则整体回滚）
   const mi = doc.materialInput
   if (seq === 1 && mi?.qty > 0
@@ -178,6 +188,14 @@ router.put('/:id/steps/:seq', canWrite, wrap(async (req, res) => {
     for (const q of qtys) {
       const t = step.qtys.find((x) => x.sku === q.sku)
       if (t) { t.inQty = Number(q.inQty) || 0; t.outQty = Number(q.outQty) || 0 }
+    }
+    // 产出自动进入下一道工序的输入（下一道工序未完成才同步；最后一道完成后不再变动）
+    const next = doc.processes.find((p) => p.seq === seq + 1)
+    if (next && !next.finishedAt) {
+      for (const q of step.qtys) {
+        const t = next.qtys.find((x) => x.sku === q.sku)
+        if (t) t.inQty = q.outQty
+      }
     }
   }
   doc.payable = doc.processes.reduce((s, p) => s + (p.fee || 0), 0)

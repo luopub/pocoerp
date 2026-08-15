@@ -367,9 +367,13 @@ async function startStep(p) {
 }
 
 async function saveStep(p) {
-  await api.put(`/workorders/${detail.value._id}/steps/${p.seq}`, {
+  const { doc } = await api.put(`/workorders/${detail.value._id}/steps/${p.seq}`, {
     supplier: p.supplier, fee: p.fee, qtys: p.qtys,
   })
+  // 用返回的单据刷新：本道产出已自动进入下一道输入（保留详情接口补充的字段）
+  doc.spuName = detail.value.spuName
+  doc.skuConsumables = detail.value.skuConsumables
+  detail.value = doc
 }
 
 async function finishStep(p) {
