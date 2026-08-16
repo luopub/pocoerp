@@ -253,12 +253,12 @@ function onTypeChange() {
 }
 
 async function onSkuPick(row, sku) {
-  // 原材料 SKU 先带出档案单价作为默认值
+  // 原材料 SKU 先带出档案单价作为默认值（SKU 为 0 时回落 SPU，由接口返回）
   const opt = skuOptions.value.find((s) => s.skuNo === sku)
   if (opt && opt.price) row.price = opt.price
-  // 有采购历史时以最近采购价为准
+  // 最近采购价 > 0 时以最近采购价为准（历史单据可能为 0，不能覆盖档案单价）
   const { price } = await api.get('/purchases/last-price', { params: { type: createForm.type, sku } })
-  if (price !== null && price !== undefined) row.price = price
+  if (price > 0) row.price = price
 }
 
 function openCreate() {
