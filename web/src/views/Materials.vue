@@ -22,9 +22,10 @@
                 <el-tag :type="s.active ? 'success' : 'info'" size="small">{{ s.active ? '启用' : '停用' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="130">
+            <el-table-column label="操作" width="160">
               <template #default="{ row: s }">
                 <el-button link type="primary" @click="openSkuEdit(row, s)">编辑</el-button>
+                <el-button link type="primary" @click="openSkuCopy(row, s)">复制</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -42,15 +43,18 @@
         <template #default="{ row }">{{ row.skus.length }}</template>
       </el-table-column>
       <el-table-column prop="remark" label="备注" min-width="100" show-overflow-tooltip />
-      <el-table-column label="操作" width="90" fixed="right">
+      <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openSpuEdit(row)">编辑</el-button>
+          <el-button link type="primary" @click="openSpuCopy(row)">复制</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <!-- SPU 编辑 -->
     <el-dialog v-model="spuDlg" :title="spuForm._id ? '编辑原材料' : '新增原材料'" width="520px">
+      <el-alert v-if="copySkus?.length" type="info" :closable="false" class="copy-tip"
+        :title="`由复制创建：保存后将同时复制 ${copySkus.length} 个 SKU（规格属性/安全库存/单价）`" />
       <el-form :model="spuForm" label-width="100px">
         <el-form-item label="名称" required><el-input v-model="spuForm.name" /></el-form-item>
         <el-form-item label="单位"><el-input v-model="spuForm.unit" placeholder="米 / 个 / kg…" /></el-form-item>
@@ -113,6 +117,7 @@ const spuDlg = ref(false)
 const skuDlg = ref(false)
 const spuForm = reactive({ _id: '', name: '', unit: '', defaultSupplier: '', price: 0, remark: '', active: true })
 const skuForm = reactive({ spuId: '', spuName: '', no: '', attrs: {}, safeStock: 0, price: 0, active: true })
+const copySkus = ref(null) // 复制 SPU 时随单携带的 SKU 列表
 
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})
@@ -133,9 +138,22 @@ async function loadSuppliers() {
 }
 
 function openSpuEdit(row) {
+  copySkus.value = null
   Object.assign(spuForm, row
     ? { _id: row._id, name: row.name, unit: row.unit, defaultSupplier: row.defaultSupplier, price: row.price || 0, remark: row.remark, active: row.active }
     : { _id: '', name: '', unit: '', defaultSupplier: '', price: 0, remark: '', active: true })
+  spuDlg.value = true
+}
+
+// 复制 SPU：字段预填、名称加副本后缀，SKU 一并复制
+function openSpuCopy(row) {
+  Object.assign(spuForm, {
+    _id: '', name: `${row.name}（副本）`, unit: row.unit,
+    defaultSupplier: row.defaultSupplier, price: row.price || 0, remark: row.remark, active: true,
+  })
+  copySkus.value = row.skus.map((s) => ({
+    attrs: { ...(s.attrs || {}) }, safeStock: s.safeStock || 0, price: s.price || 0,
+  }))
   spuDlg.value = true
 }
 
@@ -143,8 +161,13 @@ async function saveSpu() {
   if (!spuForm.name.trim()) return ElMessage.warning('请填写材料名称')
   saving.value = true
   try {
-    if (spuForm._id) await api.put(`/materials/${spuForm._id}`, spuForm)
-    else await api.post('/materials', spuForm)
+    if (spuForm._id) {
+      await api.put(`/materials/${spuForm._id}`, spuForm)
+    } else {
+      const payload = { ...spuForm }
+      if (copySkus.value?.length) payload.skus = copySkus.value
+      await api.post('/materials', payload)
+    }
     ElMessage.success('已保存')
     spuDlg.value = false
     load()
@@ -157,6 +180,15 @@ function openSkuEdit(spu, sku) {
   Object.assign(skuForm, sku
     ? { spuId: spu._id, spuName: spu.name, no: sku.no, attrs: { ...(sku.attrs || {}) }, safeStock: sku.safeStock, price: sku.price || 0, active: sku.active }
     : { spuId: spu._id, spuName: spu.name, no: '', attrs: {}, safeStock: 0, price: 0, active: true })
+  skuDlg.value = true
+}
+
+// 复制 SKU：在同一 SPU 下新增，预填规格属性/安全库存/单价
+function openSkuCopy(spu, sku) {
+  Object.assign(skuForm, {
+    spuId: spu._id, spuName: spu.name, no: '',
+    attrs: { ...(sku.attrs || {}) }, safeStock: sku.safeStock || 0, price: sku.price || 0, active: true,
+  })
   skuDlg.value = true
 }
 
@@ -181,4 +213,5 @@ onMounted(() => { load(); loadSuppliers() })
 .search { width: 240px; }
 .sku-table { margin: 4px 24px; width: calc(100% - 48px); }
 .add-sku { margin: 4px 24px; }
+.copy-tip { margin-bottom: 12px; }
 </style>
