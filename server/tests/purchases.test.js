@@ -1,6 +1,5 @@
-// 测试统一使用独立的 pocoerp_test 库，必须在 import 业务模块前设置
-process.env.APP_DB_NAME = 'pocoerp_test'
-
+// 测试统一使用独立的 pocoerp_test 库；setup-env 必须是第一个 import（见该文件注释）
+import './setup-env.js'
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import express from 'express'
