@@ -128,7 +128,7 @@
 
     <!-- 入库 -->
     <el-dialog v-model="recvDlg" :title="`入库 — ${recvOrder?.no || ''}`" width="640px">
-      <el-alert type="info" :closable="false" title="本次入库数量默认带出全部剩余数量，可改为部分入库" class="recv-tip" />
+      <el-alert type="info" :closable="false" title="本次入库数量默认带出全部剩余数量，可改为部分入库；超过采购数量时将提示确认后按实际数量入库" class="recv-tip" />
       <el-table :data="recvItems" size="small" border>
         <el-table-column prop="sku" label="SKU" min-width="150" />
         <el-table-column label="采购数" width="90" align="right">
@@ -139,7 +139,7 @@
         </el-table-column>
         <el-table-column label="本次入库" width="140">
           <template #default="{ row }">
-            <el-input-number v-model="row.thisQty" :min="0" :max="row.qty - row.receivedQty" :precision="0" size="small" controls-position="right" />
+            <el-input-number v-model="row.thisQty" :min="0" :precision="0" size="small" controls-position="right" />
           </template>
         </el-table-column>
       </el-table>
@@ -193,7 +193,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api.js'
 import { downloadExcel } from '../download.js'
 
@@ -292,6 +292,21 @@ function openReceive(row) {
 async function saveReceive() {
   const items = recvItems.value.filter((i) => i.thisQty > 0).map((i) => ({ no: i.no, qty: i.thisQty }))
   if (!items.length) return ElMessage.warning('本次入库数量均为 0')
+  // 超收检查：累计入库将超过采购数量时需用户确认
+  const over = recvItems.value.filter((i) => i.thisQty > 0 && i.receivedQty + i.thisQty > i.qty)
+  if (over.length) {
+    const lines = over.map((i) =>
+      `${i.sku}：采购 ${i.qty}，已入 ${i.receivedQty}，本次 ${i.thisQty}，超收 ${i.receivedQty + i.thisQty - i.qty}`)
+    try {
+      await ElMessageBox.confirm(
+        `以下明细实际入库将超过采购数量，超出部分按相同单价计入库存：<br>${lines.join('<br>')}`,
+        '确认超收入库？',
+        { type: 'warning', confirmButtonText: '确认入库', cancelButtonText: '返回修改', dangerouslyUseHTMLString: true }
+      )
+    } catch {
+      return // 用户取消，返回修改
+    }
+  }
   saving.value = true
   try {
     await api.post(`/purchases/${recvOrder.value._id}/receive`, { items })

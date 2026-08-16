@@ -86,8 +86,9 @@ router.post('/', canWrite, wrap(async (req, res) => {
 }))
 
 /**
- * POST /api/purchases/:id/receive  入库（支持分次）
+ * POST /api/purchases/:id/receive  入库（支持分次与超收）
  * body: { items?: [{no, qty}] }  缺省 = 全部剩余数量
+ * 本次数量可超过剩余数量（供应商多发），超收部分按相同单价计入库存（前端需用户确认）
  * 成品入库单位成本 = 采购单价 + 该 SKU 单位耗材成本（需求文档 4.5.1）
  */
 router.post('/:id/receive', canWrite, wrap(async (req, res) => {
@@ -105,8 +106,8 @@ router.post('/:id/receive', canWrite, wrap(async (req, res) => {
       const r = reqItems.find((x) => x.no === it.no)
       qty = r ? Number(r.qty) : 0
     }
-    if (qty < 0 || qty > remaining) {
-      throw Object.assign(new Error(`明细 ${it.no} 入库数量无效（剩余 ${remaining}）`), { status: 400 })
+    if (!Number.isFinite(qty) || qty < 0) {
+      throw Object.assign(new Error(`明细 ${it.no} 入库数量无效`), { status: 400 })
     }
     return { item: it, qty }
   }).filter((p) => p.qty > 0)
