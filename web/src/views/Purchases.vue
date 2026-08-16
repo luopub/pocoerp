@@ -253,7 +253,10 @@ function onTypeChange() {
 }
 
 async function onSkuPick(row, sku) {
-  // 带出最近采购价
+  // 原材料 SKU 先带出档案单价作为默认值
+  const opt = skuOptions.value.find((s) => s.skuNo === sku)
+  if (opt && opt.price) row.price = opt.price
+  // 有采购历史时以最近采购价为准
   const { price } = await api.get('/purchases/last-price', { params: { type: createForm.type, sku } })
   if (price !== null && price !== undefined) row.price = price
 }

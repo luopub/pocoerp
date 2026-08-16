@@ -6,6 +6,7 @@ const materialSkuSchema = new mongoose.Schema(
     no: { type: String, required: true },
     attrs: { type: Map, of: String, default: {} }, // 规格属性，如 {颜色: '红'}
     safeStock: { type: Number, default: 0 },
+    price: { type: Number, default: 0 }, // 参考单价（新建采购单时自动带出）
     lastStocktakeAt: { type: Date },
     active: { type: Boolean, default: true },
   },
@@ -18,6 +19,7 @@ const materialSchema = new mongoose.Schema({
   name: { type: String, required: true },
   unit: { type: String, default: '' }, // 单位：米/个/kg…
   defaultSupplier: { type: String, default: '' }, // 供应商名称
+  price: { type: Number, default: 0 }, // SPU 级参考单价（SKU 单价为 0 时使用）
   remark: { type: String, default: '' },
   active: { type: Boolean, default: true },
   skus: { type: [materialSkuSchema], default: [] },

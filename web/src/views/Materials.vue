@@ -14,6 +14,9 @@
               <template #default="{ row: s }">{{ attrsText(s.attrs) }}</template>
             </el-table-column>
             <el-table-column prop="safeStock" label="安全库存" width="90" align="right" />
+            <el-table-column label="单价" width="90" align="right">
+              <template #default="{ row: s }">{{ (s.price || row.price || 0).toFixed(2) }}</template>
+            </el-table-column>
             <el-table-column label="状态" width="70">
               <template #default="{ row: s }">
                 <el-tag :type="s.active ? 'success' : 'info'" size="small">{{ s.active ? '启用' : '停用' }}</el-tag>
@@ -32,6 +35,9 @@
       <el-table-column prop="name" label="名称" min-width="140" />
       <el-table-column prop="unit" label="单位" width="70" />
       <el-table-column prop="defaultSupplier" label="默认供应商" width="130" />
+      <el-table-column label="单价" width="90" align="right">
+        <template #default="{ row }">{{ (row.price || 0).toFixed(2) }}</template>
+      </el-table-column>
       <el-table-column label="SKU 数" width="80" align="right">
         <template #default="{ row }">{{ row.skus.length }}</template>
       </el-table-column>
@@ -53,6 +59,9 @@
             <el-option v-for="s in suppliers" :key="s._id" :label="s.name" :value="s.name" />
           </el-select>
         </el-form-item>
+        <el-form-item label="单价">
+          <el-input-number v-model="spuForm.price" :min="0" :precision="2" />
+        </el-form-item>
         <el-form-item label="备注"><el-input v-model="spuForm.remark" type="textarea" :rows="2" /></el-form-item>
         <el-form-item v-if="spuForm._id" label="状态">
           <el-switch v-model="spuForm.active" active-text="启用" inactive-text="停用" />
@@ -72,6 +81,9 @@
         </el-form-item>
         <el-form-item label="安全库存">
           <el-input-number v-model="skuForm.safeStock" :min="0" />
+        </el-form-item>
+        <el-form-item label="单价">
+          <el-input-number v-model="skuForm.price" :min="0" :precision="2" />
         </el-form-item>
         <el-form-item v-if="skuForm.no" label="状态">
           <el-switch v-model="skuForm.active" active-text="启用" inactive-text="停用" />
@@ -99,8 +111,8 @@ const saving = ref(false)
 const keyword = ref('')
 const spuDlg = ref(false)
 const skuDlg = ref(false)
-const spuForm = reactive({ _id: '', name: '', unit: '', defaultSupplier: '', remark: '', active: true })
-const skuForm = reactive({ spuId: '', spuName: '', no: '', attrs: {}, safeStock: 0, active: true })
+const spuForm = reactive({ _id: '', name: '', unit: '', defaultSupplier: '', price: 0, remark: '', active: true })
+const skuForm = reactive({ spuId: '', spuName: '', no: '', attrs: {}, safeStock: 0, price: 0, active: true })
 
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})
@@ -122,8 +134,8 @@ async function loadSuppliers() {
 
 function openSpuEdit(row) {
   Object.assign(spuForm, row
-    ? { _id: row._id, name: row.name, unit: row.unit, defaultSupplier: row.defaultSupplier, remark: row.remark, active: row.active }
-    : { _id: '', name: '', unit: '', defaultSupplier: '', remark: '', active: true })
+    ? { _id: row._id, name: row.name, unit: row.unit, defaultSupplier: row.defaultSupplier, price: row.price || 0, remark: row.remark, active: row.active }
+    : { _id: '', name: '', unit: '', defaultSupplier: '', price: 0, remark: '', active: true })
   spuDlg.value = true
 }
 
@@ -143,8 +155,8 @@ async function saveSpu() {
 
 function openSkuEdit(spu, sku) {
   Object.assign(skuForm, sku
-    ? { spuId: spu._id, spuName: spu.name, no: sku.no, attrs: { ...(sku.attrs || {}) }, safeStock: sku.safeStock, active: sku.active }
-    : { spuId: spu._id, spuName: spu.name, no: '', attrs: {}, safeStock: 0, active: true })
+    ? { spuId: spu._id, spuName: spu.name, no: sku.no, attrs: { ...(sku.attrs || {}) }, safeStock: sku.safeStock, price: sku.price || 0, active: sku.active }
+    : { spuId: spu._id, spuName: spu.name, no: '', attrs: {}, safeStock: 0, price: 0, active: true })
   skuDlg.value = true
 }
 

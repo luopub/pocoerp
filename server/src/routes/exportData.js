@@ -53,13 +53,13 @@ const EXPORTERS = {
       { header: 'SPU编号', key: 'no', width: 14 }, { header: '名称', key: 'name', width: 20 },
       { header: '单位', key: 'unit', width: 8 }, { header: '默认供应商', key: 'defaultSupplier', width: 16 },
       { header: 'SKU编号', key: 'skuNo', width: 16 }, { header: '规格属性', key: 'attrs', width: 20 },
-      { header: '安全库存', key: 'safeStock', width: 10 },
+      { header: '安全库存', key: 'safeStock', width: 10 }, { header: '单价', key: 'price', width: 10 },
     ],
     async rows() {
       const out = []
       for (const m of await Material.find().sort({ no: 1 }).lean()) {
         for (const s of m.skus) {
-          out.push({ no: m.no, name: m.name, unit: m.unit, defaultSupplier: m.defaultSupplier, skuNo: s.no, attrs: attrsText(s.attrs), safeStock: s.safeStock })
+          out.push({ no: m.no, name: m.name, unit: m.unit, defaultSupplier: m.defaultSupplier, skuNo: s.no, attrs: attrsText(s.attrs), safeStock: s.safeStock, price: s.price || m.price || 0 })
         }
       }
       return out

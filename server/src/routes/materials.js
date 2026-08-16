@@ -46,22 +46,23 @@ router.get('/skus', wrap(async (req, res) => {
       list.push({
         spuNo: m.no, spuName: m.name, unit: m.unit, skuNo: s.no,
         attrs: attrsToObj(s.attrs), qty: stocks.get(s.no)?.qty || 0,
+        price: s.price || m.price || 0, // SKU 单价为 0 时回落到 SPU 单价
       })
     }
   }
   res.json({ list })
 }))
 
-// POST /api/materials  { name, unit, defaultSupplier, remark, skus?: [{attrs, safeStock}] }
+// POST /api/materials  { name, unit, defaultSupplier, price, remark, skus?: [{attrs, safeStock, price}] }
 router.post('/', canWrite, wrap(async (req, res) => {
-  const { name, unit = '', defaultSupplier = '', remark = '', skus = [] } = req.body || {}
+  const { name, unit = '', defaultSupplier = '', price = 0, remark = '', skus = [] } = req.body || {}
   if (!name?.trim()) return res.status(400).json({ message: '材料名称必填' })
   const no = await nextNo('MAT')
-  const doc = new Material({ no, name: name.trim(), unit, defaultSupplier, remark })
+  const doc = new Material({ no, name: name.trim(), unit, defaultSupplier, price, remark })
   // 无变体时自动建 1 个默认 SKU
   const skuList = skus.length ? skus : [{ attrs: {}, safeStock: 0 }]
   skuList.forEach((s, i) => {
-    doc.skus.push({ no: subNo(no, i + 1), attrs: s.attrs || {}, safeStock: s.safeStock || 0 })
+    doc.skus.push({ no: subNo(no, i + 1), attrs: s.attrs || {}, safeStock: s.safeStock || 0, price: s.price || 0 })
   })
   await doc.save()
   res.json({ doc })
@@ -69,38 +70,40 @@ router.post('/', canWrite, wrap(async (req, res) => {
 
 // PUT /api/materials/:id  SPU 字段
 router.put('/:id', canWrite, wrap(async (req, res) => {
-  const { name, unit, defaultSupplier, remark, active } = req.body || {}
+  const { name, unit, defaultSupplier, price, remark, active } = req.body || {}
   const doc = await Material.findById(req.params.id)
   if (!doc) return res.status(404).json({ message: '材料不存在' })
   if (name !== undefined) doc.name = name.trim()
   if (unit !== undefined) doc.unit = unit
   if (defaultSupplier !== undefined) doc.defaultSupplier = defaultSupplier
+  if (price !== undefined) doc.price = price
   if (remark !== undefined) doc.remark = remark
   if (active !== undefined) doc.active = !!active
   await doc.save()
   res.json({ doc })
 }))
 
-// POST /api/materials/:id/skus  新增 SKU  { attrs, safeStock }
+// POST /api/materials/:id/skus  新增 SKU  { attrs, safeStock, price }
 router.post('/:id/skus', canWrite, wrap(async (req, res) => {
-  const { attrs = {}, safeStock = 0 } = req.body || {}
+  const { attrs = {}, safeStock = 0, price = 0 } = req.body || {}
   const doc = await Material.findById(req.params.id)
   if (!doc) return res.status(404).json({ message: '材料不存在' })
-  const sku = { no: nextSkuNo(doc), attrs, safeStock }
+  const sku = { no: nextSkuNo(doc), attrs, safeStock, price }
   doc.skus.push(sku)
   await doc.save()
   res.json({ sku, doc })
 }))
 
-// PUT /api/materials/:id/skus/:skuNo  { attrs, safeStock, active }
+// PUT /api/materials/:id/skus/:skuNo  { attrs, safeStock, price, active }
 router.put('/:id/skus/:skuNo', canWrite, wrap(async (req, res) => {
   const doc = await Material.findById(req.params.id)
   if (!doc) return res.status(404).json({ message: '材料不存在' })
   const sku = doc.skus.find((s) => s.no === req.params.skuNo)
   if (!sku) return res.status(404).json({ message: 'SKU 不存在' })
-  const { attrs, safeStock, active } = req.body || {}
+  const { attrs, safeStock, price, active } = req.body || {}
   if (attrs !== undefined) sku.attrs = attrs
   if (safeStock !== undefined) sku.safeStock = safeStock
+  if (price !== undefined) sku.price = price
   if (active !== undefined) sku.active = !!active
   await doc.save()
   res.json({ sku, doc })
