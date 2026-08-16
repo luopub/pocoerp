@@ -30,7 +30,7 @@
       <el-table-column label="明细" min-width="200">
         <template #default="{ row }">
           <div v-for="it in row.items" :key="it.no" class="item-line">
-            {{ it.sku }} × {{ it.qty }} @ {{ it.price }}
+            {{ skuLabel(it.sku) }} × {{ it.qty }} @ {{ it.price }}
             <span class="muted">（已入 {{ it.receivedQty }}）</span>
           </div>
         </template>
@@ -223,6 +223,19 @@ const supplierOptions = computed(() => {
   return matched.length ? matched : suppliers.value
 })
 const skuOptions = computed(() => (createForm.type === 'product' ? productSkus.value : materialSkus.value))
+
+// SKU 编号 → 规格属性（列表明细列显示用）
+const skuAttrsMap = computed(() => {
+  const m = new Map()
+  for (const s of [...productSkus.value, ...materialSkus.value]) m.set(s.skuNo, s.attrs)
+  return m
+})
+
+function skuLabel(sku) {
+  const attrs = skuAttrsMap.value.get(sku)
+  if (!attrs) return sku
+  return `${sku}（${attrsText(attrs)}）`
+}
 
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})
