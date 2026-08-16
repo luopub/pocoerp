@@ -25,6 +25,17 @@ async function lastPrice(type, sku) {
   return po?.items.find((i) => i.sku === sku)?.price ?? null
 }
 
+/** 校验明细行（SKU 存在、数量/单价有效），返回错误消息或 null */
+async function validateItems(type, items) {
+  if (!items.length) return '至少一行明细'
+  for (const it of items) {
+    if (!it.sku || !it.qty || it.qty <= 0) return '明细存在无效行（SKU/数量）'
+    if (it.price === undefined || it.price === null || it.price < 0) return '明细存在无效行（单价）'
+    if (!(await findSpu(type, it.sku))) return `SKU ${it.sku} 不存在`
+  }
+  return null
+}
+
 // GET /api/purchases?type=&status=&keyword=
 router.get('/', wrap(async (req, res) => {
   const { type, status, keyword } = req.query
@@ -61,15 +72,8 @@ router.post('/', canWrite, wrap(async (req, res) => {
     return res.status(400).json({ message: `供应商「${supplier.trim()}」不存在` })
   }
   if (!items.length) return res.status(400).json({ message: '至少一行明细' })
-
-  for (const it of items) {
-    if (!it.sku || !it.qty || it.qty <= 0) return res.status(400).json({ message: '明细存在无效行（SKU/数量）' })
-    if (it.price === undefined || it.price === null || it.price < 0) {
-      return res.status(400).json({ message: '明细存在无效行（单价）' })
-    }
-    const spu = await findSpu(type, it.sku)
-    if (!spu) return res.status(400).json({ message: `SKU ${it.sku} 不存在` })
-  }
+  const itemsErr = await validateItems(type, items)
+  if (itemsErr) return res.status(400).json({ message: itemsErr })
 
   const no = await nextNo(type === 'product' ? 'POP' : 'POM')
   const doc = await PurchaseOrder.create({
@@ -82,6 +86,40 @@ router.post('/', canWrite, wrap(async (req, res) => {
     payable: items.reduce((s, it) => s + it.qty * it.price, 0),
     operator: req.user.username,
   })
+  res.json({ doc })
+}))
+
+/**
+ * PUT /api/purchases/:id  编辑采购单（仅未开始入库：状态待入库且无入库记录）
+ * body: { supplier?, date?, remark?, items?: [{sku, qty, price}] }（类型不可改）
+ */
+router.put('/:id', canWrite, wrap(async (req, res) => {
+  const doc = await PurchaseOrder.findById(req.params.id)
+  if (!doc) return res.status(404).json({ message: '采购单不存在' })
+  if (doc.status === 'void') return res.status(400).json({ message: '单据已作废' })
+  if (doc.status !== 'pending' || doc.items.some((i) => i.receivedQty > 0)) {
+    return res.status(400).json({ message: '已开始入库的采购单不能修改' })
+  }
+
+  const { supplier, date, remark, items } = req.body || {}
+  if (supplier !== undefined) {
+    if (!supplier?.trim()) return res.status(400).json({ message: '供应商必填' })
+    if (!(await Supplier.exists({ name: supplier.trim() }))) {
+      return res.status(400).json({ message: `供应商「${supplier.trim()}」不存在` })
+    }
+    doc.supplier = supplier.trim()
+  }
+  if (date) doc.date = new Date(date)
+  if (remark !== undefined) doc.remark = remark
+  if (items !== undefined) {
+    const itemsErr = await validateItems(doc.type, items)
+    if (itemsErr) return res.status(400).json({ message: itemsErr })
+    doc.items = items.map((it, i) => ({
+      no: subNo(doc.no, i + 1), sku: it.sku, qty: it.qty, price: it.price, receivedQty: 0,
+    }))
+  }
+  doc.payable = doc.items.reduce((s, it) => s + it.qty * it.price, 0)
+  await doc.save()
   res.json({ doc })
 }))
 

@@ -50,8 +50,9 @@
           <el-tag size="small" :type="STATUS_TYPE[row.status]">{{ PO_STATUS[row.status] }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
+          <el-button v-if="row.status === 'pending'" link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button v-if="row.status === 'pending' || row.status === 'partial'" link type="primary" @click="openReceive(row)">入库</el-button>
           <el-button v-if="row.status === 'partial'" link type="warning" @click="openCloseDiff(row)">差异结案</el-button>
           <el-button v-if="row.status !== 'void'" link type="primary" @click="openPayments(row)">付款</el-button>
@@ -62,13 +63,13 @@
       </el-table-column>
     </el-table>
 
-    <!-- 新建采购单 -->
-    <el-dialog v-model="createDlg" title="新建采购单" width="860px" top="5vh">
+    <!-- 新建/编辑采购单 -->
+    <el-dialog v-model="createDlg" :title="editId ? '编辑采购单' : '新建采购单'" width="860px" top="5vh">
       <el-form label-width="90px">
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="类型" required>
-              <el-radio-group v-model="createForm.type" @change="onTypeChange">
+              <el-radio-group v-model="createForm.type" :disabled="!!editId" @change="onTypeChange">
                 <el-radio value="product">成品</el-radio>
                 <el-radio value="material">原材料</el-radio>
               </el-radio-group>
@@ -214,6 +215,7 @@ const suppliers = ref([])
 const productSkus = ref([])
 const materialSkus = ref([])
 const createForm = reactive({ type: 'material', supplier: '', date: '', remark: '', items: [] })
+const editId = ref('') // 编辑中的采购单 _id；空 = 新建
 
 const supplierOptions = computed(() => {
   const t = createForm.type === 'product' ? '成品供应商' : '原材料供应商'
@@ -262,7 +264,21 @@ async function onSkuPick(row, sku) {
 }
 
 function openCreate() {
+  editId.value = ''
   Object.assign(createForm, { type: 'material', supplier: '', date: '', remark: '', items: [{ sku: '', qty: 1, price: 0 }] })
+  createDlg.value = true
+}
+
+// 编辑（仅待入库单据可从列表进入，后端二次校验）
+function openEdit(row) {
+  editId.value = row._id
+  Object.assign(createForm, {
+    type: row.type,
+    supplier: row.supplier,
+    date: row.date ? new Date(row.date).toLocaleDateString('sv-SE') : '', // sv-SE = YYYY-MM-DD（本地时区）
+    remark: row.remark,
+    items: row.items.map((i) => ({ sku: i.sku, qty: i.qty, price: i.price })),
+  })
   createDlg.value = true
 }
 
@@ -272,8 +288,13 @@ async function saveCreate() {
   if (!items.length) return ElMessage.warning('请至少填写一行有效明细')
   saving.value = true
   try {
-    await api.post('/purchases', { ...createForm, items })
-    ElMessage.success('采购单已创建')
+    if (editId.value) {
+      await api.put(`/purchases/${editId.value}`, { ...createForm, items })
+      ElMessage.success('采购单已更新')
+    } else {
+      await api.post('/purchases', { ...createForm, items })
+      ElMessage.success('采购单已创建')
+    }
     createDlg.value = false
     load()
   } finally {
