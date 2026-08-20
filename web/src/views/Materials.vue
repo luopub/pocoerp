@@ -34,7 +34,12 @@
       </el-table-column>
       <el-table-column prop="no" label="编号" width="110" />
       <el-table-column prop="name" label="名称" min-width="140" />
-      <el-table-column prop="unit" label="单位" width="70" />
+      <el-table-column label="单位(内/外)" width="100">
+        <template #default="{ row }">{{ row.unit || '—' }}<span v-if="extOf(row)"> / {{ extOf(row) }}</span></template>
+      </el-table-column>
+      <el-table-column label="转换系数" width="90" align="right">
+        <template #default="{ row }">{{ extOf(row) ? row.unitRate : '—' }}</template>
+      </el-table-column>
       <el-table-column prop="defaultSupplier" label="默认供应商" width="130" />
       <el-table-column label="单价" width="90" align="right">
         <template #default="{ row }">{{ (row.price || 0).toFixed(2) }}</template>
@@ -57,14 +62,22 @@
         :title="`由复制创建：保存后将同时复制 ${copySkus.length} 个 SKU（规格属性/安全库存/单价）`" />
       <el-form :model="spuForm" label-width="100px">
         <el-form-item label="名称" required><el-input v-model="spuForm.name" /></el-form-item>
-        <el-form-item label="单位"><el-input v-model="spuForm.unit" placeholder="米 / 个 / kg…" /></el-form-item>
+        <el-form-item label="内部单位"><el-input v-model="spuForm.unit" placeholder="库存/发料用，如：码 / 个 / kg" /></el-form-item>
+        <el-form-item label="外部单位">
+          <el-input v-model="spuForm.purchaseUnit" placeholder="采购用，留空 = 同内部单位" />
+        </el-form-item>
+        <el-form-item v-if="spuForm.purchaseUnit && spuForm.purchaseUnit !== spuForm.unit" label="转换系数" required>
+          <el-input-number v-model="spuForm.unitRate" :min="0.000001" :precision="6" controls-position="right" />
+          <div class="muted">1 {{ spuForm.purchaseUnit }} = {{ spuForm.unitRate }} {{ spuForm.unit || '内部单位' }}（如 1 米 = 1.0936 码）；已有库存不受影响，仅作用于之后的采购入库</div>
+        </el-form-item>
         <el-form-item label="默认供应商">
           <el-select v-model="spuForm.defaultSupplier" filterable clearable>
             <el-option v-for="s in suppliers" :key="s._id" :label="s.name" :value="s.name" />
           </el-select>
         </el-form-item>
-        <el-form-item label="单价">
+        <el-form-item label="参考单价">
           <el-input-number v-model="spuForm.price" :min="0" :precision="2" />
+          <div v-if="spuForm.purchaseUnit && spuForm.purchaseUnit !== spuForm.unit" class="muted">按外部单位（{{ spuForm.purchaseUnit }}）计，新建采购单时带出</div>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="spuForm.remark" type="textarea" :rows="2" /></el-form-item>
         <el-form-item v-if="spuForm._id" label="状态">
@@ -115,13 +128,18 @@ const saving = ref(false)
 const keyword = ref('')
 const spuDlg = ref(false)
 const skuDlg = ref(false)
-const spuForm = reactive({ _id: '', name: '', unit: '', defaultSupplier: '', price: 0, remark: '', active: true })
+const spuForm = reactive({ _id: '', name: '', unit: '', purchaseUnit: '', unitRate: 1, defaultSupplier: '', price: 0, remark: '', active: true })
 const skuForm = reactive({ spuId: '', spuName: '', no: '', attrs: {}, safeStock: 0, price: 0, active: true })
 const copySkus = ref(null) // 复制 SPU 时随单携带的 SKU 列表
 
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})
   return entries.length ? entries.map(([k, v]) => `${k}=${v}`).join('，') : '（默认）'
+}
+
+// 外部单位（与内部单位不同时才算启用换算）
+function extOf(row) {
+  return row.purchaseUnit && row.purchaseUnit !== row.unit ? row.purchaseUnit : ''
 }
 
 async function load() {
@@ -140,8 +158,8 @@ async function loadSuppliers() {
 function openSpuEdit(row) {
   copySkus.value = null
   Object.assign(spuForm, row
-    ? { _id: row._id, name: row.name, unit: row.unit, defaultSupplier: row.defaultSupplier, price: row.price || 0, remark: row.remark, active: row.active }
-    : { _id: '', name: '', unit: '', defaultSupplier: '', price: 0, remark: '', active: true })
+    ? { _id: row._id, name: row.name, unit: row.unit, purchaseUnit: row.purchaseUnit || '', unitRate: row.unitRate || 1, defaultSupplier: row.defaultSupplier, price: row.price || 0, remark: row.remark, active: row.active }
+    : { _id: '', name: '', unit: '', purchaseUnit: '', unitRate: 1, defaultSupplier: '', price: 0, remark: '', active: true })
   spuDlg.value = true
 }
 
@@ -149,6 +167,7 @@ function openSpuEdit(row) {
 function openSpuCopy(row) {
   Object.assign(spuForm, {
     _id: '', name: `${row.name}（副本）`, unit: row.unit,
+    purchaseUnit: row.purchaseUnit || '', unitRate: row.unitRate || 1,
     defaultSupplier: row.defaultSupplier, price: row.price || 0, remark: row.remark, active: true,
   })
   copySkus.value = row.skus.map((s) => ({
@@ -159,6 +178,8 @@ function openSpuCopy(row) {
 
 async function saveSpu() {
   if (!spuForm.name.trim()) return ElMessage.warning('请填写材料名称')
+  if (!spuForm.purchaseUnit || spuForm.purchaseUnit === spuForm.unit) spuForm.unitRate = 1 // 未启用换算时系数归一
+  if (!(spuForm.unitRate > 0)) return ElMessage.warning('转换系数必须大于 0')
   saving.value = true
   try {
     if (spuForm._id) {
@@ -214,4 +235,5 @@ onMounted(() => { load(); loadSuppliers() })
 .sku-table { margin: 4px 24px; width: calc(100% - 48px); }
 .add-sku { margin: 4px 24px; }
 .copy-tip { margin-bottom: 12px; }
+.muted { color: #909399; font-size: 12px; }
 </style>

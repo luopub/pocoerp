@@ -30,7 +30,7 @@
       <el-table-column label="明细" min-width="200">
         <template #default="{ row }">
           <div v-for="it in row.items" :key="it.no" class="item-line">
-            {{ skuLabel(it.sku) }} × {{ it.qty }} @ {{ it.price }}
+            {{ skuLabel(it.sku) }} × {{ it.qty }}{{ itemUnit(row, it) }} @ {{ it.price }}
             <span class="muted">（已入 {{ it.receivedQty }}）</span>
           </div>
         </template>
@@ -99,14 +99,16 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="数量" width="120">
+          <el-table-column label="数量" width="150">
             <template #default="{ row }">
-              <el-input-number v-model="row.qty" :min="1" :precision="0" size="small" controls-position="right" />
+              <el-input-number v-model="row.qty" :min="qtyPrecision ? 0.001 : 1" :precision="qtyPrecision" size="small" controls-position="right" />
+              <span v-if="extUnitOf(row.sku)" class="muted">{{ extUnitOf(row.sku) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="单价" width="120">
+          <el-table-column label="单价" width="140">
             <template #default="{ row }">
               <el-input-number v-model="row.price" :min="0" :precision="2" size="small" controls-position="right" />
+              <span v-if="extUnitOf(row.sku)" class="muted">元/{{ extUnitOf(row.sku) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="小计" width="90" align="right">
@@ -128,19 +130,28 @@
     </el-dialog>
 
     <!-- 入库 -->
-    <el-dialog v-model="recvDlg" :title="`入库 — ${recvOrder?.no || ''}`" width="640px">
+    <el-dialog v-model="recvDlg" :title="`入库 — ${recvOrder?.no || ''}`" width="720px">
       <el-alert type="info" :closable="false" title="本次入库数量默认带出全部剩余数量，可改为部分入库；超过采购数量时将提示确认后按实际数量入库" class="recv-tip" />
       <el-table :data="recvItems" size="small" border>
         <el-table-column prop="sku" label="SKU" min-width="150" />
-        <el-table-column label="采购数" width="90" align="right">
-          <template #default="{ row }">{{ row.qty }}</template>
+        <el-table-column label="采购数" width="100" align="right">
+          <template #default="{ row }">{{ row.qty }}{{ row.purchaseUnit ? ' ' + row.purchaseUnit : '' }}</template>
         </el-table-column>
         <el-table-column label="已入库" width="90" align="right">
           <template #default="{ row }">{{ row.receivedQty }}</template>
         </el-table-column>
-        <el-table-column label="本次入库" width="140">
+        <el-table-column label="本次入库" width="150">
           <template #default="{ row }">
-            <el-input-number v-model="row.thisQty" :min="0" :precision="0" size="small" controls-position="right" />
+            <el-input-number v-model="row.thisQty" :min="0" :precision="recvPrecision" size="small" controls-position="right" />
+            <span v-if="row.purchaseUnit" class="muted">{{ row.purchaseUnit }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="hasConvert" label="折算入库" min-width="120" align="right">
+          <template #default="{ row }">
+            <span v-if="row.unitRate && row.unitRate !== 1" class="muted">
+              ≈ {{ round4(row.thisQty * row.unitRate) }} {{ internalUnitOf(row.sku) }}
+            </span>
+            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
       </el-table>
@@ -237,6 +248,27 @@ function skuLabel(sku) {
   return `${sku}（${attrsText(attrs)}）`
 }
 
+// 原材料单位换算（外部单位 = 采购单位，内部单位 = 库存单位）
+const materialSkuMap = computed(() => new Map(materialSkus.value.map((s) => [s.skuNo, s])))
+const qtyPrecision = computed(() => (createForm.type === 'material' ? 3 : 0))
+const recvPrecision = computed(() => (recvOrder.value?.type === 'material' ? 3 : 0))
+const hasConvert = computed(() => recvItems.value.some((i) => i.unitRate && i.unitRate !== 1))
+
+function extUnitOf(sku) {
+  const m = materialSkuMap.value.get(sku)
+  return m ? m.purchaseUnit || m.unit || '' : ''
+}
+function internalUnitOf(sku) {
+  return materialSkuMap.value.get(sku)?.unit || ''
+}
+// 列表行单位：优先取单据快照（旧单据无快照回落到档案）
+function itemUnit(order, item) {
+  if (order.type !== 'material') return ''
+  const u = item.purchaseUnit || extUnitOf(item.sku)
+  return u ? ` ${u}` : ''
+}
+function round4(n) { return Math.round(n * 10000) / 10000 }
+
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})
   return entries.length ? entries.map(([k, v]) => `${k}=${v}`).join(',') : '默认'
@@ -319,7 +351,11 @@ function openReceive(row) {
   recvOrder.value = row
   recvItems.value = row.items
     .filter((i) => i.qty - i.receivedQty > 0)
-    .map((i) => ({ no: i.no, sku: i.sku, qty: i.qty, receivedQty: i.receivedQty, thisQty: i.qty - i.receivedQty }))
+    .map((i) => ({
+      no: i.no, sku: i.sku, qty: i.qty, receivedQty: i.receivedQty, thisQty: i.qty - i.receivedQty,
+      purchaseUnit: i.purchaseUnit || (row.type === 'material' ? extUnitOf(i.sku) : ''),
+      unitRate: i.unitRate || 1,
+    }))
   recvDlg.value = true
 }
 

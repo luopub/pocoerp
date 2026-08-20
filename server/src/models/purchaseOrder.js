@@ -5,9 +5,12 @@ const poItemSchema = new mongoose.Schema(
   {
     no: { type: String, required: true },
     sku: { type: String, required: true }, // 产品 SKU 或材料 SKU
-    qty: { type: Number, required: true },
-    price: { type: Number, required: true },
-    receivedQty: { type: Number, default: 0 }, // 已入库数量（分次入库用）
+    qty: { type: Number, required: true }, // 数量（原材料为外部单位数量）
+    price: { type: Number, required: true }, // 单价（原材料为外部单位单价）
+    receivedQty: { type: Number, default: 0 }, // 已入库数量（分次入库用，与 qty 同单位）
+    // 原材料单位快照（建单/编辑时从材料档案取值，之后改档案不影响本单；成品行不用）
+    purchaseUnit: { type: String, default: '' }, // 外部单位（空 = 同内部单位）
+    unitRate: { type: Number, default: 1 }, // 1 外部单位 = unitRate 内部单位
   },
   { _id: false }
 )

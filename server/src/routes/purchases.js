@@ -36,6 +36,17 @@ async function validateItems(type, items) {
   return null
 }
 
+/** 原材料明细行的单位快照（外部单位 + 转换系数，建单时取自材料档案） */
+async function unitSnapshots(type, items) {
+  if (type !== 'material') return new Map()
+  const mats = await Material.find({ 'skus.no': { $in: items.map((i) => i.sku) } }).lean()
+  const m = new Map()
+  for (const mat of mats) {
+    for (const s of mat.skus) m.set(s.no, { purchaseUnit: mat.purchaseUnit || '', unitRate: mat.unitRate || 1 })
+  }
+  return m
+}
+
 // GET /api/purchases?type=&status=&keyword=
 router.get('/', wrap(async (req, res) => {
   const { type, status, keyword } = req.query
@@ -76,12 +87,14 @@ router.post('/', canWrite, wrap(async (req, res) => {
   if (itemsErr) return res.status(400).json({ message: itemsErr })
 
   const no = await nextNo(type === 'product' ? 'POP' : 'POM')
+  const snaps = await unitSnapshots(type, items)
   const doc = await PurchaseOrder.create({
     no, type, supplier: supplier.trim(),
     date: date ? new Date(date) : new Date(),
     remark,
     items: items.map((it, i) => ({
       no: subNo(no, i + 1), sku: it.sku, qty: it.qty, price: it.price, receivedQty: 0,
+      ...(snaps.get(it.sku) || {}),
     })),
     payable: items.reduce((s, it) => s + it.qty * it.price, 0),
     operator: req.user.username,
@@ -114,8 +127,10 @@ router.put('/:id', canWrite, wrap(async (req, res) => {
   if (items !== undefined) {
     const itemsErr = await validateItems(doc.type, items)
     if (itemsErr) return res.status(400).json({ message: itemsErr })
+    const snaps = await unitSnapshots(doc.type, items)
     doc.items = items.map((it, i) => ({
       no: subNo(doc.no, i + 1), sku: it.sku, qty: it.qty, price: it.price, receivedQty: 0,
+      ...(snaps.get(it.sku) || {}),
     }))
   }
   doc.payable = doc.items.reduce((s, it) => s + it.qty * it.price, 0)
@@ -128,6 +143,8 @@ router.put('/:id', canWrite, wrap(async (req, res) => {
  * body: { items?: [{no, qty}] }  缺省 = 全部剩余数量
  * 本次数量可超过剩余数量（供应商多发），超收部分按相同单价计入库存（前端需用户确认）
  * 成品入库单位成本 = 采购单价 + 该 SKU 单位耗材成本（需求文档 4.5.1）
+ * 原材料按外部单位入单、按转换系数折算内部单位入库存：
+ *   内部数量 = 外部数量 × unitRate；内部单位成本 = 本次总金额 ÷ 内部数量（总金额不变）
  */
 router.post('/:id/receive', canWrite, wrap(async (req, res) => {
   const doc = await PurchaseOrder.findById(req.params.id)
@@ -154,14 +171,20 @@ router.post('/:id/receive', canWrite, wrap(async (req, res) => {
 
   await withTxn(async (session) => {
     for (const { item, qty } of plan) {
+      let change = qty
       let unitCost = item.price
       if (doc.type === 'product') {
         const spu = await Product.findOne({ 'skus.no': item.sku }).session(session).lean()
         const sku = spu?.skus.find((s) => s.no === item.sku)
         unitCost = item.price + (sku?.consumableCost || 0)
+      } else {
+        // 原材料：外部单位 → 内部单位折算（无快照的旧单据按 1 处理）
+        const rate = item.unitRate || 1
+        change = Math.round(qty * rate * 10000) / 10000
+        unitCost = (qty * item.price) / change
       }
       await applyInventoryChange({
-        itemType: doc.type, sku: item.sku, change: qty, unitCost,
+        itemType: doc.type, sku: item.sku, change, unitCost,
         type: LOG_TYPES.PURCHASE_IN, docId: doc._id, docNo: doc.no,
         operator: req.user.username,
       }, session)

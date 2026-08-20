@@ -45,6 +45,7 @@ router.get('/skus', wrap(async (req, res) => {
       if (!s.active) continue
       list.push({
         spuNo: m.no, spuName: m.name, unit: m.unit, skuNo: s.no,
+        purchaseUnit: m.purchaseUnit || '', unitRate: m.unitRate || 1,
         attrs: attrsToObj(s.attrs), qty: stocks.get(s.no)?.qty || 0,
         price: s.price || m.price || 0, // SKU 单价为 0 时回落到 SPU 单价
       })
@@ -53,12 +54,13 @@ router.get('/skus', wrap(async (req, res) => {
   res.json({ list })
 }))
 
-// POST /api/materials  { name, unit, defaultSupplier, price, remark, skus?: [{attrs, safeStock, price}] }
+// POST /api/materials  { name, unit, purchaseUnit, unitRate, defaultSupplier, price, remark, skus?: [{attrs, safeStock, price}] }
 router.post('/', canWrite, wrap(async (req, res) => {
-  const { name, unit = '', defaultSupplier = '', price = 0, remark = '', skus = [] } = req.body || {}
+  const { name, unit = '', purchaseUnit = '', unitRate = 1, defaultSupplier = '', price = 0, remark = '', skus = [] } = req.body || {}
   if (!name?.trim()) return res.status(400).json({ message: '材料名称必填' })
+  if (!Number.isFinite(unitRate) || unitRate <= 0) return res.status(400).json({ message: '转换系数必须大于 0' })
   const no = await nextNo('MAT')
-  const doc = new Material({ no, name: name.trim(), unit, defaultSupplier, price, remark })
+  const doc = new Material({ no, name: name.trim(), unit, purchaseUnit, unitRate, defaultSupplier, price, remark })
   // 无变体时自动建 1 个默认 SKU
   const skuList = skus.length ? skus : [{ attrs: {}, safeStock: 0 }]
   skuList.forEach((s, i) => {
@@ -70,11 +72,16 @@ router.post('/', canWrite, wrap(async (req, res) => {
 
 // PUT /api/materials/:id  SPU 字段
 router.put('/:id', canWrite, wrap(async (req, res) => {
-  const { name, unit, defaultSupplier, price, remark, active } = req.body || {}
+  const { name, unit, purchaseUnit, unitRate, defaultSupplier, price, remark, active } = req.body || {}
   const doc = await Material.findById(req.params.id)
   if (!doc) return res.status(404).json({ message: '材料不存在' })
   if (name !== undefined) doc.name = name.trim()
   if (unit !== undefined) doc.unit = unit
+  if (purchaseUnit !== undefined) doc.purchaseUnit = purchaseUnit
+  if (unitRate !== undefined) {
+    if (!Number.isFinite(unitRate) || unitRate <= 0) return res.status(400).json({ message: '转换系数必须大于 0' })
+    doc.unitRate = unitRate
+  }
   if (defaultSupplier !== undefined) doc.defaultSupplier = defaultSupplier
   if (price !== undefined) doc.price = price
   if (remark !== undefined) doc.remark = remark

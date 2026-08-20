@@ -47,6 +47,10 @@ before(async () => {
     no: 'MAT000001', name: '测试布料', unit: '米',
     skus: [{ no: 'MAT000001-001' }, { no: 'MAT000001-002' }, { no: 'MAT000001-003' }],
   })
+  await Material.create({
+    no: 'MAT000002', name: '换算布料', unit: '码', purchaseUnit: '米', unitRate: 1.0936,
+    skus: [{ no: 'MAT000002-001' }],
+  })
   await Product.create({
     no: 'PRD000001', name: '测试椅套',
     skus: [{ no: 'PRD000001-001', consumableCost: 0.8 }],
@@ -156,4 +160,47 @@ test('编辑采购单：已入库（含部分）拒绝', async () => {
   const r = await api(`/${po._id}`, { remark: '试图修改' }, 'PUT')
   assert.equal(r.status, 400)
   assert.match(r.body.message, /不能修改/)
+})
+
+test('单位换算：建单快照外部单位与系数', async () => {
+  const r = await api('/', {
+    type: 'material', supplier: '测试供应商',
+    items: [{ sku: 'MAT000002-001', qty: 100, price: 10 }],
+  })
+  assert.equal(r.status, 200)
+  assert.equal(r.body.doc.items[0].purchaseUnit, '米')
+  assert.equal(r.body.doc.items[0].unitRate, 1.0936)
+  assert.equal(r.body.doc.payable, 1000) // 应付按外部单位计
+})
+
+test('单位换算：入库按系数折算内部数量，总金额不变', async () => {
+  const r = await api('/', {
+    type: 'material', supplier: '测试供应商',
+    items: [{ sku: 'MAT000002-001', qty: 100, price: 10 }],
+  })
+  const po = r.body.doc
+  const rr = await api(`/${po._id}/receive`, { items: [{ no: po.items[0].no, qty: 100 }] })
+  assert.equal(rr.status, 200)
+  assert.equal(rr.body.doc.items[0].receivedQty, 100) // 单据明细仍是外部单位数量
+
+  const st = await getStock('material', 'MAT000002-001')
+  assert.ok(Math.abs(st.qty - 109.36) < 1e-9) // 100 米 × 1.0936 = 109.36 码
+  assert.ok(Math.abs(st.avgCost - 1000 / 109.36) < 1e-6) // 总金额 1000 不变，摊到内部单位
+  const log = await InventoryLog.findOne({ sku: 'MAT000002-001' }).lean()
+  assert.ok(Math.abs(log.change - 109.36) < 1e-9)
+})
+
+test('单位换算：分次入库按外部单位逐次折算', async () => {
+  const r = await api('/', {
+    type: 'material', supplier: '测试供应商',
+    items: [{ sku: 'MAT000002-001', qty: 100, price: 10 }],
+  })
+  const po = r.body.doc
+  await api(`/${po._id}/receive`, { items: [{ no: po.items[0].no, qty: 50 }] })
+  const rr = await api(`/${po._id}/receive`, { items: [{ no: po.items[0].no, qty: 50 }] })
+  assert.equal(rr.body.doc.status, 'done')
+
+  const st = await getStock('material', 'MAT000002-001')
+  // 上一用例已入 109.36，本次两张单各 50 米 × 1.0936 = 54.68 × 2
+  assert.ok(Math.abs(st.qty - (109.36 + 54.68 + 54.68)) < 1e-9)
 })
