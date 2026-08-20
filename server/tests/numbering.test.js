@@ -8,18 +8,19 @@ import { nextNo, subNo } from '../src/services/numbering.js'
 
 before(async () => {
   await connectDB()
-  await Counter.deleteMany({})
+  // 测试文件并行运行、共享同一测试库：只清理本文件使用的计数器，避免互删
+  await Counter.deleteMany({ _id: { $in: ['TST', 'TSX'] } })
 })
 
 after(async () => {
-  await Counter.deleteMany({})
+  await Counter.deleteMany({ _id: { $in: ['TST', 'TSX'] } })
   await disconnectDB()
 })
 
 test('主号：前缀 + 6 位顺序号，连续递增', async () => {
-  assert.equal(await nextNo('PRD'), 'PRD000001')
-  assert.equal(await nextNo('PRD'), 'PRD000002')
-  assert.equal(await nextNo('WKO'), 'WKO000001') // 不同前缀各自计数
+  assert.equal(await nextNo('TST'), 'TST000001')
+  assert.equal(await nextNo('TST'), 'TST000002')
+  assert.equal(await nextNo('TSX'), 'TSX000001') // 不同前缀各自计数
 })
 
 test('子号：主号-3 位序号', () => {

@@ -42,10 +42,10 @@ router.get('/:id', wrap(async (req, res) => {
   res.json({ doc })
 }))
 
-// POST /api/workorders  { spuNo, planItems: [{sku, qty}], materialInput: {materialSku, qty}, remark }
+// POST /api/workorders  { spuNo, planItems: [{sku, qty}], materialInput: {materialSku, qty}, discardLeftover, remark }
 // 建单须指定主材及输入量（作为首道工序输入）；约束 Σ各SKU计划×单位用量 ≤ 主材输入量
 router.post('/', canWrite, wrap(async (req, res) => {
-  const { spuNo, planItems = [], materialInput = null, remark = '' } = req.body || {}
+  const { spuNo, planItems = [], materialInput = null, discardLeftover = true, remark = '' } = req.body || {}
   const product = await Product.findOne({ no: spuNo }).lean()
   if (!product) return bad(res, '产品不存在')
   if (product.kind !== 'physical') return bad(res, '虚拟组合产品不能下加工单')
@@ -82,6 +82,7 @@ router.post('/', canWrite, wrap(async (req, res) => {
     no, spuNo, remark, operator: req.user.username,
     planItems: planItems.map((it) => ({ sku: it.sku, qty: it.qty, receivedQty: 0 })),
     materialInput: { materialSku: materialInput.materialSku, qty: inputQty },
+    discardLeftover: discardLeftover !== false,
     bomSnapshot: product.bom.map((b) => ({ ...b })),
     processes: product.processTemplate.map((p, i) => ({
       no: subNo(no, i + 1), seq: i + 1, name: p.name, expectedDays: p.expectedDays,
@@ -152,16 +153,30 @@ router.post('/:id/steps/:seq/start', canWrite, wrap(async (req, res) => {
     else step.qtys.push({ sku: s.sku, inQty: s.inQty, outQty: s.inQty })
   }
   // 首道工序开始：按建单时的主材输入自动发料（扣减材料库存；库存不足则整体回滚）
+  // 丢弃余料=是：按输入量全额发料（余料成本计入本单产品）；=否：只按计划总用料发料，余料留在库存
   const mi = doc.materialInput
   if (seq === 1 && mi?.qty > 0
     && !doc.issues.some((i) => i.stepSeq === 1 && i.materialSku === mi.materialSku)) {
+    let issueQty = mi.qty
+    if (doc.discardLeftover === false) {
+      const mainRows = doc.bomSnapshot.filter((b) => b.bomType === 'main' && b.materialSku === mi.materialSku)
+      const usageOf = (sku) => mainRows
+        .filter((b) => !b.applySkus?.length || b.applySkus.includes(sku))
+        .reduce((s, b) => s + b.usage, 0)
+      const planned = doc.planItems.reduce((s, p) => s + p.qty * usageOf(p.sku), 0)
+      issueQty = Math.min(mi.qty, Math.round(planned * 10000) / 10000)
+    }
+    if (issueQty <= 0) { // 计划用料为 0，无料可发
+      await doc.save()
+      return res.json({ doc })
+    }
     await withTxn(async (session) => {
       const r = await applyInventoryChange({
-        itemType: 'material', sku: mi.materialSku, change: -mi.qty,
+        itemType: 'material', sku: mi.materialSku, change: -issueQty,
         type: LOG_TYPES.ISSUE_OUT, docId: doc._id, docNo: doc.no,
         operator: req.user.username,
       }, session)
-      doc.issues.push({ stepSeq: 1, materialSku: mi.materialSku, qty: mi.qty, unitCost: r.avgCost })
+      doc.issues.push({ stepSeq: 1, materialSku: mi.materialSku, qty: issueQty, unitCost: r.avgCost })
       await doc.save({ session })
     })
     return res.json({ doc })

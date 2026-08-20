@@ -36,11 +36,17 @@ async function makePo(no, type, sku, qty, price) {
   })
 }
 
+// 本文件夹具范围（测试文件并行共享测试库，清理只删自己的数据）
+const OWN_SKU = /^(MAT000001|MAT000002|PRD000001)-/
+
 before(async () => {
   await connectDB()
   await Promise.all([
-    PurchaseOrder.deleteMany({}), Material.deleteMany({}), Product.deleteMany({}),
-    Inventory.deleteMany({}), InventoryLog.deleteMany({}), Supplier.deleteMany({}),
+    PurchaseOrder.deleteMany({}), // 采购单集合仅本文件使用
+    Material.deleteMany({ no: { $in: ['MAT000001', 'MAT000002'] } }),
+    Product.deleteMany({ no: 'PRD000001' }),
+    Inventory.deleteMany({ sku: OWN_SKU }), InventoryLog.deleteMany({ sku: OWN_SKU }),
+    Supplier.deleteMany({ no: 'SUP900001' }),
   ])
   await Supplier.create({ no: 'SUP900001', name: '测试供应商', types: ['原材料供应商', '成品供应商'] })
   await Material.create({
@@ -68,8 +74,11 @@ before(async () => {
 
 after(async () => {
   await Promise.all([
-    PurchaseOrder.deleteMany({}), Material.deleteMany({}), Product.deleteMany({}),
-    Inventory.deleteMany({}), InventoryLog.deleteMany({}), Supplier.deleteMany({}),
+    PurchaseOrder.deleteMany({}),
+    Material.deleteMany({ no: { $in: ['MAT000001', 'MAT000002'] } }),
+    Product.deleteMany({ no: 'PRD000001' }),
+    Inventory.deleteMany({ sku: OWN_SKU }), InventoryLog.deleteMany({ sku: OWN_SKU }),
+    Supplier.deleteMany({ no: 'SUP900001' }),
   ])
   server?.close()
   await disconnectDB()

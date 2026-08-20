@@ -69,6 +69,9 @@ const workOrderSchema = new mongoose.Schema({
     materialSku: { type: String, default: '' },
     qty: { type: Number, default: 0 },
   },
+  // 丢弃余料：true=首工序按主材输入量全额发料（余料成本计入本单产品）；
+  // false=首工序只按计划总用料发料，余料留在原材料库存（默认 true，与旧单据行为一致）
+  discardLeftover: { type: Boolean, default: true },
   // 创建时的 BOM 快照（此后改产品 BOM 不影响本单）
   bomSnapshot: { type: Array, default: [] },
   processes: { type: [processRecordSchema], default: [] },

@@ -63,14 +63,22 @@
         </el-form-item>
         <el-form-item v-if="createForm.spu" label="计划数量" required>
           <div class="plan-list">
-            <div v-for="s in createForm.spu.skus.filter((x) => x.active)" :key="s.no" class="plan-row">
+            <div v-for="(s, i) in orderedSkus" :key="s.no" class="plan-row">
+              <span class="order-btns">
+                <el-button link size="small" :disabled="i === 0" @click="moveSku(i, -1)">↑</el-button>
+                <el-button link size="small" :disabled="i === orderedSkus.length - 1" @click="moveSku(i, 1)">↓</el-button>
+              </span>
               <span class="plan-sku">{{ s.no }}（{{ attrsText(s.attrs) }}，用量 {{ usageOf(s.no) }}）</span>
-              <el-input-number v-model="createForm.qtys[s.no]" :min="0" :precision="0" controls-position="right" />
+              <el-input-number v-model="createForm.qtys[s.no]" :min="0" :precision="0" controls-position="right" @change="onQtyEdit(i)" />
             </div>
             <div class="muted" :class="{ 'over-limit': overLimit }">
-              合计用料 {{ round3(totalUsage) }} / 主材输入 {{ createForm.materialQty || 0 }}
+              合计用料 {{ round3(totalUsage) }} / 主材输入 {{ createForm.materialQty || 0 }}，
+              剩余主材 {{ round3(leftover) }}
               <template v-if="overLimit">（已超出，请调减计划或加大输入量）</template>
             </div>
+            <el-checkbox v-model="createForm.discardLeftover">
+              丢弃余料（首工序按主材输入量全额发料，余料成本计入本单；不勾则只发计划用料，余料留在原材料库存）
+            </el-checkbox>
           </div>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="createForm.remark" /></el-form-item>
@@ -89,6 +97,7 @@
           <span>{{ detail.spuName }}（{{ detail.spuNo }}）</span>
           <span v-if="detail.materialInput?.qty" class="muted">
             主材输入 {{ detail.materialInput.materialSku }} × {{ detail.materialInput.qty }}
+            <template v-if="detail.discardLeftover === false">（余料留库）</template>
           </span>
           <span v-if="consumableText" class="muted">耗材成本 {{ consumableText }}/件</span>
           <el-button v-if="detail.status !== 'void'" size="small" type="primary" plain @click="openPayments">付款登记</el-button>
@@ -227,7 +236,7 @@ const productList = ref([])
 const processors = ref([])
 const materialSkus = ref([])
 const completeQtys = reactive({})
-const createForm = reactive({ spuNo: '', spu: null, qtys: {}, materialSku: '', materialQty: null, remark: '' })
+const createForm = reactive({ spuNo: '', spu: null, qtys: {}, skuOrder: [], materialSku: '', materialQty: null, discardLeftover: true, remark: '' })
 const issueForm = reactive({ materialSku: '', qty: 1 })
 
 // BOM 主材行（建单约束：Σ各SKU计划×单位用量 ≤ 主材输入量）
@@ -245,6 +254,14 @@ const totalUsage = computed(() =>
   Object.entries(createForm.qtys).reduce((s, [sku, q]) => s + (q || 0) * usageOf(sku), 0))
 const overLimit = computed(() =>
   createForm.materialQty > 0 && totalUsage.value - createForm.materialQty > 1e-6)
+// 剩余主材 = 输入量 − 计划总用料（负数即超出）
+const leftover = computed(() => (createForm.materialQty || 0) - totalUsage.value)
+// 计划 SKU 的显示顺序（可上下调整，主材分配按此顺序级联）
+const orderedSkus = computed(() => {
+  if (!createForm.spu) return []
+  const byNo = new Map(createForm.spu.skus.map((s) => [s.no, s]))
+  return createForm.skuOrder.map((no) => byNo.get(no)).filter(Boolean)
+})
 function round3(n) { return Math.round(n * 1000) / 1000 }
 
 const lastStepFinished = computed(() => {
@@ -307,10 +324,11 @@ async function loadRefs() {
 function onSpuPick(no) {
   createForm.spu = spuOptions.value.find((p) => p.no === no) || null
   createForm.qtys = {}
+  createForm.skuOrder = (createForm.spu?.skus || []).filter((s) => s.active).map((s) => s.no)
   onMaterialPick(mainRows.value[0]?.materialSku || '')
 }
 
-// 选择主材：默认填入该材料全部库存数量，并自动排满各 SKU 计划
+// 选择主材：默认填入该材料全部库存数量，并按 skuOrder 重新分配计划
 function onMaterialPick(skuNo) {
   createForm.materialSku = skuNo
   const m = materialSkus.value.find((x) => x.skuNo === skuNo)
@@ -318,26 +336,51 @@ function onMaterialPick(skuNo) {
   autoFillPlans()
 }
 
-// 按 SKU 顺序尽量排满：每个 SKU 计划 = ⌊剩余主材 ÷ 该 SKU 单位用量⌋
+// 默认分配：全部主材给第一个 SKU（数量 = ⌊输入量 ÷ 该 SKU 单位用量⌋），其余为 0
 function autoFillPlans() {
   if (!createForm.spu) return
-  let remaining = createForm.materialQty || 0
-  for (const s of createForm.spu.skus.filter((x) => x.active)) {
-    const u = usageOf(s.no)
-    const q = u > 0 ? Math.floor((remaining + 1e-9) / u) : 0
-    createForm.qtys[s.no] = q
-    remaining = Math.max(0, remaining - q * u)
-  }
+  const input = createForm.materialQty || 0
+  createForm.skuOrder.forEach((no, i) => {
+    const u = usageOf(no)
+    createForm.qtys[no] = i === 0 && u > 0 ? Math.floor((input + 1e-9) / u) : 0
+  })
+}
+
+// 调整 SKU 顺序：主材按新顺序重新分配
+function moveSku(i, dir) {
+  const j = i + dir
+  if (j < 0 || j >= createForm.skuOrder.length) return
+  const arr = createForm.skuOrder
+  ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  autoFillPlans()
+}
+
+// 修改第 i 个 SKU 数量后：剩余主材全部给第 i+1 个，其后清零（依此类推）
+function onQtyEdit(i) {
+  const input = createForm.materialQty || 0
+  let used = 0
+  createForm.skuOrder.forEach((no, idx) => {
+    if (idx <= i) {
+      used += (createForm.qtys[no] || 0) * usageOf(no)
+    } else if (idx === i + 1) {
+      const u = usageOf(no)
+      const rem = Math.max(0, input - used)
+      createForm.qtys[no] = u > 0 ? Math.floor((rem + 1e-9) / u) : 0
+      used += createForm.qtys[no] * u
+    } else {
+      createForm.qtys[no] = 0
+    }
+  })
 }
 
 function openCreate() {
-  Object.assign(createForm, { spuNo: '', spu: null, qtys: {}, materialSku: '', materialQty: null, remark: '' })
+  Object.assign(createForm, { spuNo: '', spu: null, qtys: {}, skuOrder: [], materialSku: '', materialQty: null, discardLeftover: true, remark: '' })
   createDlg.value = true
 }
 
 async function saveCreate() {
   if (!createForm.spuNo) return ElMessage.warning('请选择产品')
-  const planItems = Object.entries(createForm.qtys).filter(([, q]) => q > 0).map(([sku, qty]) => ({ sku, qty }))
+  const planItems = createForm.skuOrder.map((sku) => ({ sku, qty: createForm.qtys[sku] })).filter((p) => p.qty > 0)
   if (!planItems.length) return ElMessage.warning('请填写计划数量')
   if (!createForm.materialSku) return ElMessage.warning('请选择主材')
   if (!createForm.materialQty || createForm.materialQty <= 0) return ElMessage.warning('请填写主材输入量')
@@ -349,6 +392,7 @@ async function saveCreate() {
     await api.post('/workorders', {
       spuNo: createForm.spuNo, planItems,
       materialInput: { materialSku: createForm.materialSku, qty: createForm.materialQty },
+      discardLeftover: createForm.discardLeftover,
       remark: createForm.remark,
     })
     ElMessage.success('加工单已创建')
@@ -493,6 +537,7 @@ onMounted(() => { load(); loadRefs() })
 .line { line-height: 1.6; }
 .muted { color: #909399; font-size: 12px; }
 .plan-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; width: 100%; }
+.order-btns { display: inline-flex; }
 .plan-sku { min-width: 260px; }
 .plan-list { width: 100%; }
 .material-row { display: flex; gap: 12px; width: 100%; }
