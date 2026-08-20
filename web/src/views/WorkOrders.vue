@@ -14,10 +14,10 @@
       <el-table-column label="产品" min-width="130">
         <template #default="{ row }">{{ row.spuName }}<div class="muted">{{ row.spuNo }}</div></template>
       </el-table-column>
-      <el-table-column label="计划" min-width="170">
+      <el-table-column label="计划" min-width="200">
         <template #default="{ row }">
           <div v-for="p in row.planItems" :key="p.sku" class="line">
-            {{ p.sku }} × {{ p.qty }}<span class="muted">（已入 {{ p.receivedQty }}）</span>
+            {{ skuLabel(p.sku) }} × {{ p.qty }}<span class="muted">（已入 {{ p.receivedQty }}）</span>
           </div>
         </template>
       </el-table-column>
@@ -223,6 +223,7 @@ const detail = ref(null)
 const issueStep = ref(null)
 const suggested = ref([])
 const spuOptions = ref([])
+const productList = ref([])
 const processors = ref([])
 const materialSkus = ref([])
 const completeQtys = reactive({})
@@ -260,6 +261,19 @@ const consumableText = computed(() =>
     .map(([k, v]) => `${k.split('-')[1]}:${v}`)
     .join('，'))
 
+// SKU 编号 → 规格属性（列表"计划"列显示用）
+const skuAttrsMap = computed(() => {
+  const m = new Map()
+  for (const p of productList.value) for (const s of p.skus || []) m.set(s.no, s.attrs)
+  return m
+})
+
+function skuLabel(sku) {
+  const attrs = skuAttrsMap.value.get(sku)
+  if (!attrs) return sku
+  return `${sku}（${attrsText(attrs)}）`
+}
+
 function attrsText(attrs) {
   const entries = Object.entries(attrs || {})
   return entries.length ? entries.map(([k, v]) => `${k}=${v}`).join(',') : '默认'
@@ -284,6 +298,7 @@ async function load() {
 
 async function loadRefs() {
   const products = (await api.get('/products')).list
+  productList.value = products
   spuOptions.value = products.filter((p) => p.kind === 'physical' && p.source !== 'direct' && p.processTemplate.length && p.bom.length)
   processors.value = (await api.get('/suppliers', { params: { type: '加工商' } })).list
   materialSkus.value = (await api.get('/materials/skus')).list
